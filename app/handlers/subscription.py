@@ -16,6 +16,7 @@ async def check_subscription(
     db
 ) -> None:
 
+    print("НАЖАЛИ НА ПРОВЕРКУ ПОДПИСКИ")
     await callback.answer()
 
     user_id = callback.from_user.id
