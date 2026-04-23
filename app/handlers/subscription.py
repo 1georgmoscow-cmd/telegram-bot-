@@ -16,22 +16,21 @@ async def check_subscription(
     db
 ) -> None:
 
-    print("CHECK SUBSCRIPTION CLICKED")  # ✅ ВНУТРИ функции
-
-    await callback.answer("Проверяю...")
-
     print("CHECK SUBSCRIPTION CLICKED")
 
-subscribed = await is_subscribed(
-    bot,
-    settings.channel_id,
-    callback.from_user.id
-)
+    # отвечаем на нажатие кнопки (убирает "часики")
+    await callback.answer("Проверяю подписку...")
 
-print("SUBSCRIBED RESULT:", subscribed)
+    # проверка подписки
+    subscribed = await is_subscribed(
+        bot,
+        settings.channel_id,
+        callback.from_user.id
+    )
 
-    print("SUB RESULT:", subscribed)  # ✅ лог результата
+    print("SUBSCRIBED RESULT:", subscribed)
 
+    # если НЕ подписан
     if not subscribed:
         await callback.message.edit_text(
             "❌ Ты не подписан на канал.\n\n"
@@ -40,6 +39,7 @@ print("SUBSCRIBED RESULT:", subscribed)
         )
         return
 
+    # если подписан
     await callback.answer("Подписка подтверждена ✅")
 
     await show_main_menu(callback)
