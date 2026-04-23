@@ -2,21 +2,14 @@ from aiogram import Router, Bot, F
 from aiogram.types import CallbackQuery
 
 from app.services.subscription import is_subscribed
+from app.handlers.menu import show_main_menu
 from app.keyboards.common import subscription_kb
 
 router = Router()
 
 
 @router.callback_query(F.data == "check_subscription")
-async def check_subscription(
-    callback: CallbackQuery,
-    bot: Bot,
-    settings,
-    db
-) -> None:
-    """
-    Проверка подписки пользователя
-    """
+async def check_subscription(callback: CallbackQuery, bot: Bot, settings, db):
 
     subscribed = await is_subscribed(
         bot,
@@ -24,7 +17,7 @@ async def check_subscription(
         callback.from_user.id
     )
 
-    # ❌ НЕ подписан
+    # ❌ не подписан
     if not subscribed:
         await callback.message.edit_text(
             "❌ Ты не подписан на канал.\nПодпишись и нажми кнопку ещё раз.",
@@ -36,6 +29,5 @@ async def check_subscription(
     # ✅ подписан
     await callback.answer("Подписка подтверждена ✅")
 
-    await callback.message.edit_text(
-        "✅ Отлично! Подписка подтверждена.\nТеперь можешь пользоваться ботом."
-    )
+    # 🔥 показываем главное меню
+    await show_main_menu(callback)
