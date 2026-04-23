@@ -47,7 +47,7 @@ async def _show_calendar(callback: CallbackQuery, db: Database, month_offset: in
 
 # ---------------- START BOOKING ----------------
 
-@router.callback_query(StateFilter(None), F.data == "start_booking")
+@router.callback_query(F.data == "book")
 async def start_booking(callback: CallbackQuery, db: Database, bot: Bot, settings: Settings) -> None:
 
     if db.has_active_booking(callback.from_user.id):
