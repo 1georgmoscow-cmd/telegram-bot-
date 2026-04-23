@@ -19,20 +19,19 @@ from app.handlers import (
 )
 
 from app.services.scheduler import ReminderService
-from app.services.subscription import SubscriptionService
 
 
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
 
-    # ⚙️ settings
+    # ⚙️ настройки
     settings = load_settings()
 
-    # 🗄 DB
+    # 🗄 база данных
     db = Database(settings.database_path)
     db.init()
 
-    # 🤖 bot
+    # 🤖 бот
     bot = Bot(
         token=settings.bot_token,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
@@ -49,12 +48,10 @@ async def main() -> None:
         db=db,
         bot=bot,
     )
+
     reminder_service.restore_jobs_from_db()
 
-    # 📦 subscription service
-    subscription_service = SubscriptionService(cache_ttl=120)
-
-    # 🔥 РОУТЕРЫ (ВАЖНО: порядок такой норм)
+    # 🧩 handlers
     dp.include_router(start.router)
     dp.include_router(subscription.router)
     dp.include_router(menu_handlers.router)
@@ -62,13 +59,12 @@ async def main() -> None:
     dp.include_router(misc.router)
     dp.include_router(admin.router)
 
-    # 🚀 запуск polling
+    # 🚀 запуск
     await dp.start_polling(
         bot,
         settings=settings,
         db=db,
         reminder_service=reminder_service,
-        subscription_service=subscription_service,
     )
 
 
