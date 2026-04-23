@@ -16,6 +16,8 @@ async def check_subscription(
     db
 ) -> None:
 
+    await callback.answer()
+
     user_id = callback.from_user.id
 
     subscribed = await is_subscribed(
