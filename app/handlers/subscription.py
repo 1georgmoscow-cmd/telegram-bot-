@@ -14,6 +14,7 @@ async def check_subscription(
     bot: Bot,
     settings,
     db
+    print("CHECK SUBSCRIPTION CLICKED")
 ) -> None:
 
     print("НАЖАЛИ НА ПРОВЕРКУ ПОДПИСКИ")
