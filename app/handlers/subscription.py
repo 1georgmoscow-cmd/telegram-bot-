@@ -1,27 +1,61 @@
-from aiogram import Bot, F, Router
-from aiogram.types import CallbackQuery
+import time
+import logging
+from aiogram import Bot
 
-from app.config import Settings
-from app.database.db import Database
-from app.handlers.booking import _show_calendar
-from app.keyboards.common import subscription_kb
-from app.services.subscription import is_subscribed
-
-router = Router()
+logger = logging.getLogger(__name__)
 
 
-@router.callback_query(F.data == "check_subscription")
-async def check_subscription(
-    callback: CallbackQuery, bot: Bot, settings: Settings, db: Database
-) -> None:
-    subscribed = await is_subscribed(bot, settings.channel_id, callback.from_user.id)
-    if not subscribed:
-        await callback.message.edit_text(
-            "Для записи необходимо подписаться на канал",
-            reply_markup=subscription_kb(settings.channel_link),
+class SubscriptionService:
+    def __init__(self, cache_ttl: int = 120):
+        """
+        cache_ttl — время жизни кэша в секундах
+        """
+        self.cache_ttl = cache_ttl
+        self._cache: dict[tuple[str, int], tuple[bool, float]] = {}
+
+    async def is_subscribed(self, bot: Bot, channel_id: str, user_id: int) -> bool:
+        """
+        Проверка подписки с кэшем и защитой от ошибок Telegram API
+        """
+
+        key = (channel_id, user_id)
+        now = time.time()
+
+        # 🔥 1. Проверка кэша
+        cached = self._cache.get(key)
+        if cached:
+            subscribed, expires_at = cached
+            if now < expires_at:
+                return subscribed
+
+        # 🔥 2. Запрос к Telegram API
+        try:
+            member = await bot.get_chat_member(
+                chat_id=channel_id,
+                user_id=user_id
+            )
+
+            subscribed = member.status in (
+                "member",
+                "administrator",
+                "creator"
+            )
+
+        except Exception as e:
+            # ⚠️ Важно: НЕ роняем бота
+            logger.warning(f"[subscription check failed] {e}")
+            subscribed = False
+
+        # 🔥 3. Кэшируем результат
+        self._cache[key] = (
+            subscribed,
+            now + self.cache_ttl
         )
-        await callback.answer("Подписка не найдена", show_alert=True)
-        return
 
-    await _show_calendar(callback, db, month_offset=0)
-    await callback.answer("Подписка подтверждена ✅")
+        return subscribed
+
+    def clear_cache(self):
+        """
+        Очистка кэша (если понадобится вручную)
+        """
+        self._cache.clear()
