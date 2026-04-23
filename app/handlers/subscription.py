@@ -8,15 +8,8 @@ from app.keyboards.common import subscription_kb
 router = Router()
 
 
-@router.callback_query(F.data == "check_sub")
-async def check_subscription(
-    callback: CallbackQuery,
-    bot: Bot,
-    settings,
-    db
-) -> None:
-
-    print("CHECK SUBSCRIPTION CLICKED")
+@router.callback_query(F.data == "check_subscription")
+async def check_subscription(callback: CallbackQuery, bot: Bot, settings, db) -> None:
 
     await callback.answer("Проверяю подписку...")
 
@@ -26,6 +19,7 @@ async def check_subscription(
         callback.from_user.id
     )
 
+    print("CHECK SUBSCRIPTION CLICKED")
     print("SUBSCRIBED RESULT:", subscribed)
 
     if not subscribed:
