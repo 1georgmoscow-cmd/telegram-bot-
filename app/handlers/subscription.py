@@ -2,6 +2,7 @@ import time
 
 from aiogram import Router, Bot, F
 from aiogram.types import CallbackQuery
+from aiogram.exceptions import TelegramBadRequest
 
 from app.services.subscription import is_subscribed
 from app.handlers.ui import show_main_menu
@@ -9,7 +10,6 @@ from app.keyboards.common import subscription_kb
 
 router = Router()
 
-# 🚫 антиспам-кулдаун (в памяти)
 CHECK_COOLDOWN = {}
 
 
@@ -26,11 +26,10 @@ async def check_subscription(
 
     print("CHECK SUBSCRIPTION CLICKED")
 
-    # 🚫 защита от спама (3 секунды)
-    if user_id in CHECK_COOLDOWN:
-        if now - CHECK_COOLDOWN[user_id] < 3:
-            await callback.answer("Не спамь 😄 подожди пару секунд")
-            return
+    # антиспам
+    if user_id in CHECK_COOLDOWN and now - CHECK_COOLDOWN[user_id] < 3:
+        await callback.answer("Подожди пару секунд 😄")
+        return
 
     CHECK_COOLDOWN[user_id] = now
 
@@ -55,10 +54,21 @@ async def check_subscription(
             return
 
         # ✅ ПОДПИСАН
-        await callback.message.edit_text("⏳ Подписка подтверждена...")
+        try:
+            await callback.message.edit_text("⏳ Проверка успешна...")
+        except TelegramBadRequest:
+            pass  # если не изменилось — игнор
 
         await show_main_menu(callback)
 
     except Exception as e:
-        print("ERROR CHECK SUBSCRIPTION:", e)
-        await callback.message.answer("⚠️ Ошибка проверки подписки")
+        print("SUBSCRIPTION ERROR:", e)
+
+        # ⚠️ ВАЖНО: НЕ создаём новое сообщение
+        try:
+            await callback.message.edit_text(
+                "⚠️ Ошибка проверки подписки.\nПопробуй ещё раз.",
+                reply_markup=subscription_kb(settings.channel_link)
+            )
+        except TelegramBadRequest:
+            await callback.answer("Ошибка проверки подписки", show_alert=True)
