@@ -47,4 +47,3 @@ async def faq(callback: CallbackQuery):
 async def back(callback: CallbackQuery):
     await safe_answer(callback)
     await show_main_menu(callback)
-    print("🔥 MENU HANDLERS LOADED")
