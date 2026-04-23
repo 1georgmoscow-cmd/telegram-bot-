@@ -38,14 +38,14 @@ async def check_subscription(
         await callback.answer("Подписка не найдена", show_alert=True)
         return
 
-    # ✅ есть подписка
-await callback.answer("Подписка подтверждена ✅")
+    # ✅ подписан
+    await callback.answer("Подписка подтверждена ✅")
 
-# 🧹 удаляем сообщение с кнопкой подписки
-try:
-    await callback.message.delete()
-except:
-    pass
+    # 🧹 удаляем сообщение
+    try:
+        await callback.message.delete()
+    except:
+        pass
 
-# 🏠 показываем главное меню
-await show_main_menu(callback)
+    # 🏠 меню
+    await show_main_menu(callback)
