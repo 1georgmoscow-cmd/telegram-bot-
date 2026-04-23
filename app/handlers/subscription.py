@@ -3,7 +3,7 @@ from aiogram.types import CallbackQuery
 
 from app.services.subscription import is_subscribed
 from app.handlers.ui import show_main_menu
-from app.keyboards.common import main_menu_kb
+from app.keyboards.common import subscription_kb
 
 router = Router()
 
@@ -29,15 +29,19 @@ async def check_subscription(
 
         print("SUBSCRIBED RESULT:", subscribed)
 
+        # ❌ НЕ ПОДПИСАН
         if not subscribed:
             await callback.message.edit_text(
                 "❌ Ты не подписан на канал.\n\n"
                 "Подпишись и нажми кнопку ещё раз.",
-                reply_markup=main_menu_kb()
+                reply_markup=subscription_kb(settings.channel_link)
             )
-            return
+            return  # 🚨 СТОП — дальше ничего не идёт
 
-        await callback.message.edit_text("✅ Подписка подтверждена!")
+        # ✅ ПОДПИСАН
+        await callback.answer("Подписка подтверждена ✅")
+
+        await callback.message.edit_text("✅ Ты подписан!")
 
         await show_main_menu(callback)
 
