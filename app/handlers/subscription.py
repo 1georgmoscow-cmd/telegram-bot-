@@ -20,11 +20,15 @@ async def check_subscription(
 
     await callback.answer("Проверяю...")
 
-    subscribed = await is_subscribed(
-        bot,
-        settings.channel_id,
-        callback.from_user.id
-    )
+    print("CHECK SUBSCRIPTION CLICKED")
+
+subscribed = await is_subscribed(
+    bot,
+    settings.channel_id,
+    callback.from_user.id
+)
+
+print("SUBSCRIBED RESULT:", subscribed)
 
     print("SUB RESULT:", subscribed)  # ✅ лог результата
 
