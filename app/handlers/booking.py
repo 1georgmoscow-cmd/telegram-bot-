@@ -1,7 +1,6 @@
 from datetime import date, timedelta
 
 from aiogram import Bot, F, Router
-from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
@@ -32,91 +31,100 @@ async def _show_calendar(callback: CallbackQuery, db: Database, month_offset: in
     available_days = set(db.get_month_work_days(start_date, end_date))
 
     if not available_days:
-        await callback.message.edit_text(
-            "❌ Нет доступных дней",
-            reply_markup=back_to_menu_kb(),
-        )
+        try:
+            await callback.message.edit_text(
+                "Пока нет доступных дат.",
+                reply_markup=back_to_menu_kb(),
+            )
+        except:
+            pass
         return
 
-    await callback.message.edit_text(
-        "<b>Выберите дату записи</b>",
-        parse_mode="HTML",
-        reply_markup=month_calendar_kb(available_days, month_offset),
-    )
+    try:
+        await callback.message.edit_text(
+            "<b>Выберите дату записи</b>",
+            parse_mode="HTML",
+            reply_markup=month_calendar_kb(available_days, month_offset),
+        )
+    except:
+        pass
 
 
-# ---------------- BOOK ENTRY ----------------
-
-@router.callback_query(StateFilter(None), F.data == "book")
+# =========================
+# 🚀 START BOOKING
+# =========================
+@router.callback_query(F.data == "start_booking")
 async def start_booking(
     callback: CallbackQuery,
     db: Database,
     bot: Bot,
     settings: Settings,
 ):
-    await callback.answer()
-
-    print("BOOK CLICKED")
+    print("🔥 START_BOOKING TRIGGERED")
 
     if db.has_active_booking(callback.from_user.id):
         booking = db.get_active_booking(callback.from_user.id)
 
         await callback.message.edit_text(
             "<b>У вас уже есть запись:</b>\n"
-            f"📅 {format_ru_date(booking['date'])}\n"
-            f"⏰ {booking['time']}",
+            f"Дата: <b>{format_ru_date(booking['date'])}</b>\n"
+            f"Время: <b>{booking['time']}</b>",
             parse_mode="HTML",
             reply_markup=back_to_menu_kb(),
         )
-        return
+        return await callback.answer()
 
-    subscribed = await is_subscribed(
-        bot, settings.channel_id, callback.from_user.id
-    )
+    subscribed = await is_subscribed(bot, settings.channel_id, callback.from_user.id)
 
     if not subscribed:
         await callback.message.edit_text(
-            "❌ Подпишись на канал для записи",
+            "❗ Чтобы записаться, подпишись на канал",
             reply_markup=subscription_kb(settings.channel_link),
         )
-        return
+        return await callback.answer()
 
-    await _show_calendar(callback, db)
-
-
-# ---------------- CALENDAR ----------------
-
-@router.callback_query(StateFilter(None), F.data.startswith("cal_month:"))
-async def calendar_month(callback: CallbackQuery, db: Database):
+    await _show_calendar(callback, db, 0)
     await callback.answer()
+
+
+# =========================
+# 📅 MONTH SWITCH
+# =========================
+@router.callback_query(F.data.startswith("cal_month:"))
+async def calendar_month(callback: CallbackQuery, db: Database):
     month_offset = int(callback.data.split(":")[1])
     await _show_calendar(callback, db, month_offset)
-
-
-@router.callback_query(StateFilter(None), F.data.startswith("pick_date:"))
-async def pick_date(callback: CallbackQuery, db: Database, state: FSMContext):
     await callback.answer()
 
+
+# =========================
+# 📆 PICK DATE
+# =========================
+@router.callback_query(F.data.startswith("pick_date:"))
+async def pick_date(callback: CallbackQuery, db: Database, state: FSMContext):
     date_str = callback.data.split(":")[1]
     slots = db.get_free_slots(date_str)
 
     if not slots:
-        await callback.answer("Нет слотов", show_alert=True)
+        await callback.answer("Нет свободных слотов", show_alert=True)
         return
 
     await state.update_data(chosen_date=date_str)
 
     await callback.message.edit_text(
-        f"<b>{format_ru_date(date_str)}</b>\nВыбери время:",
+        f"<b>Дата:</b> {format_ru_date(date_str)}\nВыберите время:",
         parse_mode="HTML",
         reply_markup=slots_kb(date_str, slots),
     )
 
-
-@router.callback_query(StateFilter(None), F.data.startswith("pick_time:"))
-async def pick_time(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
+
+# =========================
+# ⏰ PICK TIME
+# =========================
+@router.callback_query(F.data.startswith("pick_time:"))
+async def pick_time(callback: CallbackQuery, state: FSMContext):
     _, date_str, time_str = callback.data.split(":")
 
     await state.update_data(
@@ -127,44 +135,51 @@ async def pick_time(callback: CallbackQuery, state: FSMContext):
     await state.set_state(BookingStates.waiting_for_name)
 
     await callback.message.edit_text(
-        f"📅 {format_ru_date(date_str)}\n⏰ {time_str}\n\nВведи имя:",
+        f"<b>Дата:</b> {format_ru_date(date_str)}\n"
+        f"<b>Время:</b> {time_str}\n\n"
+        "Введите имя:",
         parse_mode="HTML",
     )
 
+    await callback.answer()
 
-# ---------------- FORM ----------------
 
+# =========================
+# 👤 NAME
+# =========================
 @router.message(BookingStates.waiting_for_name)
 async def get_name(message: Message, state: FSMContext):
-    await state.update_data(name=message.text)
+    await state.update_data(name=message.text.strip())
     await state.set_state(BookingStates.waiting_for_phone)
 
-    await message.answer("Теперь номер телефона:")
+    await message.answer("Введите телефон:")
 
 
+# =========================
+# 📞 PHONE
+# =========================
 @router.message(BookingStates.waiting_for_phone)
 async def get_phone(message: Message, state: FSMContext):
+    phone = message.text.strip()
     data = await state.get_data()
 
-    await state.update_data(phone=message.text)
+    await state.update_data(phone=phone)
 
     await message.answer(
-        "<b>Проверь:</b>\n"
-        f"📅 {format_ru_date(data['chosen_date'])}\n"
-        f"⏰ {data['chosen_time']}\n"
-        f"👤 {data['name']}\n"
-        f"📞 {message.text}",
+        "<b>Проверь данные:</b>\n"
+        f"Дата: {format_ru_date(data['chosen_date'])}\n"
+        f"Время: {data['chosen_time']}\n"
+        f"Имя: {data['name']}\n"
+        f"Телефон: {phone}",
         parse_mode="HTML",
         reply_markup=confirm_booking_kb(),
     )
 
 
-# ---------------- CONFIRM ----------------
-
-@router.callback_query(
-    BookingStates.waiting_for_phone,
-    F.data == "confirm_booking",
-)
+# =========================
+# ✅ CONFIRM
+# =========================
+@router.callback_query(BookingStates.waiting_for_phone, F.data == "confirm_booking")
 async def confirm_booking(
     callback: CallbackQuery,
     state: FSMContext,
@@ -172,8 +187,6 @@ async def confirm_booking(
     settings: Settings,
     reminder_service: ReminderService,
 ):
-    await callback.answer()
-
     data = await state.get_data()
 
     booking_id = db.create_booking(
@@ -190,51 +203,21 @@ async def confirm_booking(
             reply_markup=back_to_menu_kb(),
         )
         await state.clear()
-        return
+        return await callback.answer()
+
+    job_id = reminder_service.schedule_booking_reminder(
+        booking_id,
+        callback.from_user.id,
+        data["chosen_date"],
+        data["chosen_time"],
+    )
+
+    db.set_reminder_job_id(booking_id, job_id)
+
+    await callback.message.edit_text(
+        "✅ Запись подтверждена!",
+        reply_markup=back_to_menu_kb(),
+    )
 
     await state.clear()
-
-    await callback.message.edit_text(
-        "✅ Запись создана!",
-        reply_markup=back_to_menu_kb(),
-    )
-
-    await callback.bot.send_message(
-        settings.admin_id,
-        f"Новая запись:\n{data}",
-    )
-
-
-# ---------------- MY BOOKING ----------------
-
-@router.callback_query(F.data == "my_booking")
-async def my_booking(callback: CallbackQuery, db: Database):
     await callback.answer()
-
-    booking = db.get_active_booking(callback.from_user.id)
-
-    if not booking:
-        await callback.message.edit_text(
-            "Нет записи",
-            reply_markup=back_to_menu_kb(),
-        )
-        return
-
-    await callback.message.edit_text(
-        f"📅 {booking['date']}\n⏰ {booking['time']}",
-        reply_markup=back_to_menu_kb(),
-    )
-
-
-# ---------------- CANCEL ----------------
-
-@router.callback_query(F.data == "cancel_booking")
-async def cancel_booking(callback: CallbackQuery, db: Database):
-    await callback.answer()
-
-    db.cancel_booking_by_user(callback.from_user.id)
-
-    await callback.message.edit_text(
-        "❌ Запись отменена",
-        reply_markup=back_to_menu_kb(),
-    )
