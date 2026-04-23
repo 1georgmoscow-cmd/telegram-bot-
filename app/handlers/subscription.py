@@ -8,7 +8,7 @@ from app.keyboards.common import subscription_kb
 router = Router()
 
 
-@router.callback_query(F.data == "check_subscription")
+@router.callback_query(F.data == "check_sub")
 async def check_subscription(
     callback: CallbackQuery,
     bot: Bot,
@@ -18,10 +18,8 @@ async def check_subscription(
 
     print("CHECK SUBSCRIPTION CLICKED")
 
-    # отвечаем на нажатие кнопки (убирает "часики")
     await callback.answer("Проверяю подписку...")
 
-    # проверка подписки
     subscribed = await is_subscribed(
         bot,
         settings.channel_id,
@@ -30,7 +28,6 @@ async def check_subscription(
 
     print("SUBSCRIBED RESULT:", subscribed)
 
-    # если НЕ подписан
     if not subscribed:
         await callback.message.edit_text(
             "❌ Ты не подписан на канал.\n\n"
@@ -39,7 +36,6 @@ async def check_subscription(
         )
         return
 
-    # если подписан
     await callback.answer("Подписка подтверждена ✅")
 
     await show_main_menu(callback)
