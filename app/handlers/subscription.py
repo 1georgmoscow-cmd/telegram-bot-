@@ -20,7 +20,6 @@ async def check_subscription(
 
     await callback.answer("Проверяю подписку... ⏳")
 
-    # проверка подписки
     subscribed = await is_subscribed(
         bot,
         settings.channel_id,
@@ -29,6 +28,7 @@ async def check_subscription(
 
     print("SUBSCRIBED RESULT:", subscribed)
 
+    # ❌ если НЕ подписан
     if not subscribed:
         try:
             await callback.message.edit_text(
@@ -36,11 +36,12 @@ async def check_subscription(
                 "Подпишись и нажми кнопку ещё раз 👇",
                 reply_markup=subscription_kb(settings.channel_link)
             )
-        except:
-            pass
+        except Exception as e:
+            print("EDIT ERROR:", e)
+            await callback.answer("Открой сообщение выше 👆", show_alert=True)
         return
 
-    # если подписан
+    # ✔ если подписан
     await callback.answer("Подписка подтверждена ✅")
 
     await show_main_menu(callback)
