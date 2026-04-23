@@ -20,31 +20,27 @@ async def check_subscription(
 
     await callback.answer("Проверяю подписку...")
 
-    try:
-        subscribed = await is_subscribed(
-            bot,
-            settings.channel_id,
-            callback.from_user.id
+    subscribed = await is_subscribed(
+        bot,
+        settings.channel_id,
+        callback.from_user.id
+    )
+
+    print("SUBSCRIBED RESULT:", subscribed)
+
+    # ❌ НЕ ПОДПИСАН
+    if not subscribed:
+        await callback.message.edit_text(
+            "❌ Ты не подписан на канал.\n\n"
+            "Подпишись и нажми кнопку «Проверить подписку» ещё раз.",
+            reply_markup=subscription_kb(settings.channel_link)
         )
+        return
 
-        print("SUBSCRIBED RESULT:", subscribed)
+    # ✅ ПОДПИСАН — СТАБИЛЬНЫЙ ПЕРЕХОД
+    await callback.message.edit_text("⏳ Проверяю подписку...")
 
-        # ❌ НЕ ПОДПИСАН
-        if not subscribed:
-            await callback.message.edit_text(
-                "❌ Ты не подписан на канал.\n\n"
-                "Подпишись и нажми кнопку ещё раз.",
-                reply_markup=subscription_kb(settings.channel_link)
-            )
-            return  # 🚨 СТОП — дальше ничего не идёт
+    await callback.answer("Подписка подтверждена ✅")
 
-        # ✅ ПОДПИСАН
-        await callback.answer("Подписка подтверждена ✅")
-
-        await callback.message.edit_text("✅ Ты подписан!")
-
-        await show_main_menu(callback)
-
-    except Exception as e:
-        print("ERROR CHECK SUBSCRIPTION:", e)
-        await callback.message.answer("⚠️ Ошибка проверки подписки")
+    # небольшая задержка чтобы Telegram не конфликтовал
+    await show_main_menu(callback)
