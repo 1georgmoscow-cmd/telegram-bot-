@@ -30,17 +30,18 @@ async def check_subscription(
 
     # ❌ если НЕ подписан
     if not subscribed:
-        try:
-            await callback.message.edit_text(
-                "❌ Ты не подписан на канал.\n\n"
-                "Подпишись и нажми кнопку ещё раз 👇",
-                reply_markup=subscription_kb(settings.channel_link)
-            )
-        except Exception as e:
-            print("EDIT ERROR:", e)
-            await callback.answer("Открой сообщение выше 👆", show_alert=True)
-        return
+    try:
+        await callback.message.edit_text(
+            "❌ ПОДПИСКА НЕ НАЙДЕНА\n\n"
+            "👉 Подпишись на канал и нажми кнопку ещё раз\n\n"
+            "⚠️ Без подписки доступ закрыт",
+            reply_markup=subscription_kb(settings.channel_link)
+        )
+    except Exception as e:
+        print("EDIT ERROR:", e)
 
+    await callback.answer("Ты не подписан ❌", show_alert=True)
+    return
     # ✔ если подписан
     await callback.answer("Подписка подтверждена ✅")
 
