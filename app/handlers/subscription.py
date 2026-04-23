@@ -1,5 +1,6 @@
 from aiogram import Router, Bot, F
 from aiogram.types import CallbackQuery
+from aiogram.exceptions import TelegramBadRequest
 
 from app.services.subscription import is_subscribed
 from app.handlers.ui import show_main_menu
@@ -9,7 +10,14 @@ router = Router()
 
 
 @router.callback_query(F.data == "check_sub")
-async def check_subscription(callback: CallbackQuery, bot: Bot, settings, db) -> None:
+async def check_subscription(
+    callback: CallbackQuery,
+    bot: Bot,
+    settings,
+    db
+) -> None:
+
+    print("CHECK SUBSCRIPTION CLICKED")
 
     await callback.answer("Проверяю подписку...")
 
@@ -19,17 +27,22 @@ async def check_subscription(callback: CallbackQuery, bot: Bot, settings, db) ->
         callback.from_user.id
     )
 
-    print("CHECK SUBSCRIPTION CLICKED")
     print("SUBSCRIBED RESULT:", subscribed)
 
+    # ❌ НЕ ПОДПИСАН
     if not subscribed:
-        await callback.message.edit_text(
-            "❌ Ты не подписан на канал.\n\n"
-            "Подпишись и нажми кнопку ещё раз.",
-            reply_markup=subscription_kb(settings.channel_link)
-        )
+        try:
+            await callback.message.edit_text(
+                "❌ Ты не подписан на канал.\n\n"
+                "Подпишись и нажми кнопку ещё раз.",
+                reply_markup=subscription_kb(settings.channel_link)
+            )
+        except TelegramBadRequest:
+            pass  # сообщение уже такое же
+
         return
 
+    # ✅ ПОДПИСАН
     await callback.answer("Подписка подтверждена ✅")
 
     await show_main_menu(callback)
