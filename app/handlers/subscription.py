@@ -3,12 +3,12 @@ from aiogram.types import CallbackQuery
 
 from app.services.subscription import is_subscribed
 from app.handlers.ui import show_main_menu
-from app.keyboards.subscription import subscription_kb
+from app.keyboards.common import main_menu_kb
 
 router = Router()
 
 
-@router.callback_query(F.data == "check_subscription")
+@router.callback_query(F.data.in_({"check_subscription", "check_sub"}))
 async def check_subscription(
     callback: CallbackQuery,
     bot: Bot,
@@ -18,31 +18,29 @@ async def check_subscription(
 
     print("CHECK SUBSCRIPTION CLICKED")
 
-    await callback.answer("Проверяю подписку... ⏳")
+    await callback.answer("Проверяю подписку...")
 
-    subscribed = await is_subscribed(
-        bot,
-        settings.channel_id,
-        callback.from_user.id
-    )
-
-    print("SUBSCRIBED RESULT:", subscribed)
-
-    # ❌ если НЕ подписан
-    if not subscribed:
     try:
-        await callback.message.edit_text(
-            "❌ ПОДПИСКА НЕ НАЙДЕНА\n\n"
-            "👉 Подпишись на канал и нажми кнопку ещё раз\n\n"
-            "⚠️ Без подписки доступ закрыт",
-            reply_markup=subscription_kb(settings.channel_link)
+        subscribed = await is_subscribed(
+            bot,
+            settings.channel_id,
+            callback.from_user.id
         )
+
+        print("SUBSCRIBED RESULT:", subscribed)
+
+        if not subscribed:
+            await callback.message.edit_text(
+                "❌ Ты не подписан на канал.\n\n"
+                "Подпишись и нажми кнопку ещё раз.",
+                reply_markup=main_menu_kb()
+            )
+            return
+
+        await callback.message.edit_text("✅ Подписка подтверждена!")
+
+        await show_main_menu(callback)
+
     except Exception as e:
-        print("EDIT ERROR:", e)
-
-    await callback.answer("Ты не подписан ❌", show_alert=True)
-    return
-    # ✔ если подписан
-    await callback.answer("Подписка подтверждена ✅")
-
-    await show_main_menu(callback)
+        print("ERROR CHECK SUBSCRIPTION:", e)
+        await callback.message.answer("⚠️ Ошибка проверки подписки")
