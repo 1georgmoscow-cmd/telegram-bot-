@@ -16,6 +16,7 @@ from app.keyboards.calendar import (
 )
 from app.keyboards.common import back_to_menu_kb, subscription_kb
 from app.services.subscription import is_subscribed
+from app.services.scheduler import ReminderService
 from app.states.booking import BookingStates
 
 router = Router()
@@ -25,11 +26,6 @@ SERVICES = {
     "nails": "💅 Маникюр",
     "brows": "👁 Брови",
 }
-
-
-def get_range():
-    today = date.today()
-    return today, today + timedelta(days=90)
 
 
 # =========================
@@ -53,14 +49,11 @@ async def start_booking(
         )
         return
 
-    try:
-        subscribed = await is_subscribed(
-            bot,
-            settings.channel_id,
-            callback.from_user.id,
-        )
-    except:
-        subscribed = False
+    subscribed = await is_subscribed(
+        bot,
+        settings.channel_id,
+        callback.from_user.id,
+    )
 
     if not subscribed:
         await callback.message.edit_text(
@@ -84,11 +77,7 @@ async def start_booking(
 # SERVICE
 # =========================
 @router.callback_query(F.data.startswith("service:"))
-async def choose_service(
-    callback: CallbackQuery,
-    state: FSMContext,
-    repo: BookingRepository,
-):
+async def choose_service(callback: CallbackQuery, state: FSMContext, repo: BookingRepository):
     await callback.answer()
 
     service = callback.data.split(":", 1)[1]
@@ -96,65 +85,11 @@ async def choose_service(
 
     today = date.today()
 
-    days = set(
-        repo.get_month_work_days(
-            today.isoformat(),
-            (today + timedelta(days=90)).isoformat(),
-        )
-    )
+    days = repo.get_work_days()
 
     await callback.message.edit_text(
         "📅 Выбери дату:",
-        reply_markup=month_calendar_kb(days, 0),
-    )
-
-
-# =========================
-# MONTH SWITCH
-# =========================
-@router.callback_query(F.data.startswith("cal_month:"))
-async def change_month(callback: CallbackQuery, repo: BookingRepository):
-    await callback.answer()
-
-    try:
-        offset = int(callback.data.split(":")[1])
-    except:
-        return
-
-    today = date.today()
-
-    days = set(
-        repo.get_month_work_days(
-            today.isoformat(),
-            (today + timedelta(days=90)).isoformat(),
-        )
-    )
-
-    await callback.message.edit_text(
-        "📅 Выбери дату:",
-        reply_markup=month_calendar_kb(days, offset),
-    )
-
-
-# =========================
-# BACK CALENDAR
-# =========================
-@router.callback_query(F.data == "back_calendar")
-async def back_calendar(callback: CallbackQuery, repo: BookingRepository):
-    await callback.answer()
-
-    today = date.today()
-
-    days = set(
-        repo.get_month_work_days(
-            today.isoformat(),
-            (today + timedelta(days=90)).isoformat(),
-        )
-    )
-
-    await callback.message.edit_text(
-        "📅 Выбери дату:",
-        reply_markup=month_calendar_kb(days, 0),
+        reply_markup=month_calendar_kb(set(days), 0),
     )
 
 
@@ -162,17 +97,10 @@ async def back_calendar(callback: CallbackQuery, repo: BookingRepository):
 # PICK DATE
 # =========================
 @router.callback_query(F.data.startswith("pick_date:"))
-async def pick_date(
-    callback: CallbackQuery,
-    repo: BookingRepository,
-    state: FSMContext,
-):
+async def pick_date(callback: CallbackQuery, repo: BookingRepository, state: FSMContext):
     await callback.answer()
 
-    try:
-        date_str = callback.data.split(":", 1)[1]
-    except:
-        return
+    date_str = callback.data.split(":", 1)[1]
 
     slots = repo.get_free_slots(date_str)
 
@@ -195,10 +123,7 @@ async def pick_date(
 async def pick_time(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
-    try:
-        _, date_str, time_str = callback.data.split(":", 2)
-    except:
-        return
+    _, date_str, time_str = callback.data.split(":", 2)
 
     await state.update_data(date=date_str, time=time_str)
     await state.set_state(BookingStates.waiting_for_name)
@@ -244,7 +169,8 @@ async def confirm(
     callback: CallbackQuery,
     state: FSMContext,
     repo: BookingRepository,
-    reminder_service,
+    bot: Bot,
+    reminder_service: ReminderService,
 ):
     await callback.answer()
 
@@ -266,13 +192,14 @@ async def confirm(
         await state.clear()
         return
 
-    # 🔥 напоминание
-    reminder_service.schedule_booking_reminder(
+    job_id = reminder_service.schedule_booking_reminder(
         booking_id=booking_id,
         user_id=callback.from_user.id,
         date_str=data.get("date"),
         time_str=data.get("time"),
     )
+
+    repo.set_reminder_job_id(booking_id, job_id)
 
     await state.clear()
 
