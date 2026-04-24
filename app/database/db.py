@@ -1,46 +1,54 @@
 import sqlite3
-from datetime import datetime, date, timedelta
+from datetime import datetime, timedelta
 
 
 class Database:
     def __init__(self, path: str = "bot.db"):
         self.conn = sqlite3.connect(path, check_same_thread=False)
         self.cursor = self.conn.cursor()
-        self._create_tables()
 
     # =========================
-    # TABLES
+    # INIT DB
     # =========================
-    def _create_tables(self):
+    def init(self):
         self.cursor.execute("""
         CREATE TABLE IF NOT EXISTS bookings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            name TEXT,
-            phone TEXT,
-            date TEXT,
-            time TEXT,
-            status TEXT DEFAULT 'active'
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            phone TEXT NOT NULL,
+            date TEXT NOT NULL,
+            time TEXT NOT NULL,
+            status TEXT DEFAULT 'active',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
         """)
-
         self.conn.commit()
 
     # =========================
-    # BOOKING CHECKS
+    # CHECK ACTIVE BOOKING
     # =========================
     def has_active_booking(self, user_id: int) -> bool:
-        self.cursor.execute(
-            "SELECT id FROM bookings WHERE user_id=? AND status='active'",
-            (user_id,)
-        )
+        self.cursor.execute("""
+            SELECT id FROM bookings
+            WHERE user_id=? AND status='active'
+            LIMIT 1
+        """, (user_id,))
+
         return self.cursor.fetchone() is not None
 
+    # =========================
+    # GET ACTIVE BOOKING
+    # =========================
     def get_active_booking(self, user_id: int):
-        self.cursor.execute(
-            "SELECT date, time, name, phone FROM bookings WHERE user_id=? AND status='active'",
-            (user_id,)
-        )
+        self.cursor.execute("""
+            SELECT date, time
+            FROM bookings
+            WHERE user_id=? AND status='active'
+            ORDER BY id DESC
+            LIMIT 1
+        """, (user_id,))
+
         row = self.cursor.fetchone()
 
         if not row:
@@ -48,34 +56,49 @@ class Database:
 
         return {
             "date": row[0],
-            "time": row[1],
-            "name": row[2],
-            "phone": row[3],
+            "time": row[1]
         }
 
     # =========================
     # CREATE BOOKING
     # =========================
-    def create_booking(self, user_id: int, name: str, phone: str, date_str: str, time_str: str):
-        # защита от двойной записи
-        self.cursor.execute(
-            "SELECT id FROM bookings WHERE date=? AND time=? AND status='active'",
-            (date_str, time_str)
-        )
+    def create_booking(self, user_id: int, name: str, phone: str, date: str, time: str):
+        # проверка занятости слота
+        self.cursor.execute("""
+            SELECT id FROM bookings
+            WHERE date=? AND time=? AND status='active'
+        """, (date, time))
 
         if self.cursor.fetchone():
             return None
 
         self.cursor.execute("""
-            INSERT INTO bookings (user_id, name, phone, date, time, status)
-            VALUES (?, ?, ?, ?, ?, 'active')
-        """, (user_id, name, phone, date_str, time_str))
+            INSERT INTO bookings (user_id, name, phone, date, time)
+            VALUES (?, ?, ?, ?, ?)
+        """, (user_id, name, phone, date, time))
 
         self.conn.commit()
         return self.cursor.lastrowid
 
     # =========================
-    # SLOTS (ВАЖНО 🔥)
+    # WORK DAYS (для календаря)
+    # =========================
+    def get_month_work_days(self, start: str, end: str):
+        start_date = datetime.fromisoformat(start)
+        end_date = datetime.fromisoformat(end)
+
+        days = []
+        current = start_date
+
+        while current <= end_date:
+            if current.date() >= datetime.today().date():
+                days.append(current.date().isoformat())
+            current += timedelta(days=1)
+
+        return days
+
+    # =========================
+    # FREE SLOTS
     # =========================
     def get_free_slots(self, date_str: str):
         all_slots = [
@@ -84,54 +107,17 @@ class Database:
             "16:00", "17:00", "18:00"
         ]
 
-        self.cursor.execute(
-            "SELECT time FROM bookings WHERE date=? AND status='active'",
-            (date_str,)
-        )
+        self.cursor.execute("""
+            SELECT time FROM bookings
+            WHERE date=? AND status='active'
+        """, (date_str,))
 
         booked = {row[0] for row in self.cursor.fetchall()}
 
-        return [s for s in all_slots if s not in booked]
+        return [slot for slot in all_slots if slot not in booked]
 
     # =========================
-    # WORK DAYS (упрощённо)
+    # CLOSE
     # =========================
-    def get_month_work_days(self, start_date: str, end_date: str):
-        start = datetime.fromisoformat(start_date).date()
-        end = datetime.fromisoformat(end_date).date()
-
-        days = []
-        current = start
-
-        while current <= end:
-            # убираем только воскресенье (пример логики)
-            if current.weekday() != 6:
-                days.append(current.isoformat())
-
-            current += timedelta(days=1)
-
-        return days
-
-    # =========================
-    # RESTORE SCHEDULER FIX 🔥
-    # =========================
-    def get_active_bookings_for_restore(self):
-        self.cursor.execute("""
-            SELECT id, user_id, date, time, name, phone
-            FROM bookings
-            WHERE status='active'
-        """)
-
-        rows = self.cursor.fetchall()
-
-        return [
-            {
-                "id": r[0],
-                "user_id": r[1],
-                "date": r[2],
-                "time": r[3],
-                "name": r[4],
-                "phone": r[5],
-            }
-            for r in rows
-        ]
+    def close(self):
+        self.conn.close()
