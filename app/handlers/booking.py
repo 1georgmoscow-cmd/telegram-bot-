@@ -22,7 +22,7 @@ router = Router()
 
 
 # =========================
-# CRM CONFIG
+# услуги
 # =========================
 SERVICES = {
     "hair": "💇‍♀️ Стрижка",
@@ -30,46 +30,19 @@ SERVICES = {
     "brows": "👁 Брови",
 }
 
-BOOKING_RANGE_DAYS = 90
-
 
 # =========================
-# CRM HELPERS
-# =========================
-def get_range():
-    today = date.today()
-    return today, today + timedelta(days=BOOKING_RANGE_DAYS)
-
-
-def build_services_kb():
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text=v, callback_data=f"crm:service:{k}")]
-            for k, v in SERVICES.items()
-        ]
-        + [[InlineKeyboardButton(text="🏠 Меню", callback_data="back_menu")]]
-    )
-
-
-def safe_answer(callback: CallbackQuery, text=None):
-    try:
-        return callback.answer(text) if text else callback.answer()
-    except:
-        pass
-
-
-# =========================
-# ENTRY POINT
+# start booking
 # =========================
 @router.callback_query(StateFilter(None), F.data.in_(["start_booking", "book"]))
 async def start_booking(callback: CallbackQuery, bot: Bot, settings: Settings, db: Database):
-    safe_answer(callback)
+    await callback.answer()
 
     if db.has_active_booking(callback.from_user.id):
         b = db.get_active_booking(callback.from_user.id)
+
         await callback.message.edit_text(
             f"📌 У тебя уже есть запись:\n\n"
-            f"{b['service']}\n"
             f"{b['date']} {b['time']}",
             reply_markup=back_to_menu_kb(),
         )
@@ -87,60 +60,50 @@ async def start_booking(callback: CallbackQuery, bot: Bot, settings: Settings, d
         )
         return
 
-    await state_reset(callback)
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=v, callback_data=f"service:{k}")]
+            for k, v in SERVICES.items()
+        ]
+        + [[InlineKeyboardButton(text="🏠 Меню", callback_data="back_menu")]]
+    )
+
     await callback.message.edit_text(
         "💎 Выбери услугу:",
-        reply_markup=build_services_kb(),
+        reply_markup=kb,
     )
 
 
 # =========================
-# RESET CRM STATE
+# service select
 # =========================
-async def state_reset(callback: CallbackQuery):
-    # защита от "залипших" состояний
-    pass
-
-
-# =========================
-# SERVICE STEP
-# =========================
-@router.callback_query(F.data.startswith("crm:service:"))
+@router.callback_query(F.data.startswith("service:"))
 async def choose_service(callback: CallbackQuery, state: FSMContext, db: Database):
-    safe_answer(callback)
+    await callback.answer()
 
-    service = callback.data.split(":")[2]
-
-    await state.update_data(
-        service=service,
-        date=None,
-        time=None,
-        name=None,
-        phone=None,
-    )
+    service = callback.data.split(":", 1)[1]
+    await state.update_data(service=service)
 
     today = date.today()
     days = set(
         db.get_month_work_days(
             today.isoformat(),
-            (today + timedelta(days=BOOKING_RANGE_DAYS)).isoformat(),
+            (today + timedelta(days=90)).isoformat(),
         )
     )
 
-    await state.set_state(BookingStates.select_date)
-
     await callback.message.edit_text(
-        f"💇 Услуга: {SERVICES.get(service)}\n\n📅 Выбери дату:",
+        "📅 Выбери дату:",
         reply_markup=month_calendar_kb(days, 0),
     )
 
 
 # =========================
-# MONTH NAVIGATION
+# month change
 # =========================
 @router.callback_query(F.data.startswith("cal_month:"))
 async def change_month(callback: CallbackQuery, db: Database):
-    safe_answer(callback)
+    await callback.answer()
 
     offset = int(callback.data.split(":")[1])
 
@@ -148,7 +111,7 @@ async def change_month(callback: CallbackQuery, db: Database):
     days = set(
         db.get_month_work_days(
             today.isoformat(),
-            (today + timedelta(days=BOOKING_RANGE_DAYS)).isoformat(),
+            (today + timedelta(days=90)).isoformat(),
         )
     )
 
@@ -159,17 +122,17 @@ async def change_month(callback: CallbackQuery, db: Database):
 
 
 # =========================
-# BACK TO CALENDAR
+# back calendar
 # =========================
 @router.callback_query(F.data == "back_calendar")
 async def back_calendar(callback: CallbackQuery, db: Database):
-    safe_answer(callback)
+    await callback.answer()
 
     today = date.today()
     days = set(
         db.get_month_work_days(
             today.isoformat(),
-            (today + timedelta(days=BOOKING_RANGE_DAYS)).isoformat(),
+            (today + timedelta(days=90)).isoformat(),
         )
     )
 
@@ -180,13 +143,13 @@ async def back_calendar(callback: CallbackQuery, db: Database):
 
 
 # =========================
-# DATE PICK
+# pick date
 # =========================
 @router.callback_query(F.data.startswith("pick_date:"))
 async def pick_date(callback: CallbackQuery, db: Database, state: FSMContext):
-    safe_answer(callback)
+    await callback.answer()
 
-    date_str = callback.data.split(":")[1]
+    date_str = callback.data.split(":", 1)[1]
 
     slots = db.get_free_slots(date_str)
 
@@ -195,88 +158,85 @@ async def pick_date(callback: CallbackQuery, db: Database, state: FSMContext):
         return
 
     await state.update_data(date=date_str)
-    await state.set_state(BookingStates.select_time)
 
     await callback.message.edit_text(
-        f"📅 {format_ru_date(date_str)}\n\n⏰ Выбери время:",
+        f"📅 {format_ru_date(date_str)}\n\nВыбери время:",
         reply_markup=slots_kb(date_str, slots),
     )
 
 
 # =========================
-# TIME PICK (CRITICAL FIXED)
+# pick time (FIXED FSM)
 # =========================
 @router.callback_query(F.data.startswith("pick_time:"))
 async def pick_time(callback: CallbackQuery, state: FSMContext):
-    safe_answer(callback)
+    await callback.answer()
 
-    try:
-        _, date_str, time_str = callback.data.split(":", 2)
-    except:
+    parts = callback.data.split(":", 2)
+    if len(parts) != 3:
         await callback.answer("Ошибка данных", show_alert=True)
         return
 
+    _, date_str, time_str = parts
+
     await state.update_data(date=date_str, time=time_str)
-    await state.set_state(BookingStates.enter_name)
 
-    await callback.message.edit_text(
-        "✍️ Введи имя клиента:"
-    )
+    # 🔥 FIX: правильный state
+    await state.set_state(BookingStates.waiting_for_name)
+
+    await callback.message.edit_text("✍️ Введи имя:")
 
 
 # =========================
-# NAME
+# name
 # =========================
-@router.message(BookingStates.enter_name)
+@router.message(BookingStates.waiting_for_name)
 async def get_name(message: Message, state: FSMContext):
     await state.update_data(name=message.text)
-    await state.set_state(BookingStates.enter_phone)
+    await state.set_state(BookingStates.waiting_for_phone)
 
     await message.answer("📱 Введи телефон:")
 
 
 # =========================
-# PHONE
+# phone
 # =========================
-@router.message(BookingStates.enter_phone)
+@router.message(BookingStates.waiting_for_phone)
 async def get_phone(message: Message, state: FSMContext):
     data = await state.get_data()
 
     await state.update_data(phone=message.text)
 
     await message.answer(
-        "📌 Подтверди запись:\n\n"
-        f"💇 Услуга: {data.get('service')}\n"
-        f"📅 Дата: {data.get('date')}\n"
-        f"⏰ Время: {data.get('time')}\n"
-        f"👤 Имя: {data.get('name')}\n"
-        f"📱 Телефон: {message.text}",
+        "📌 Проверь:\n\n"
+        f"📅 {data.get('date')}\n"
+        f"⏰ {data.get('time')}\n"
+        f"👤 {data.get('name')}\n"
+        f"📱 {message.text}",
         reply_markup=confirm_booking_kb(),
     )
 
 
 # =========================
-# CONFIRM (CRM FINAL STEP)
+# confirm booking
 # =========================
 @router.callback_query(F.data == "confirm_booking")
 async def confirm(callback: CallbackQuery, state: FSMContext, db: Database):
-    safe_answer(callback)
+    await callback.answer()
 
     data = await state.get_data()
 
-    try:
-        booking_id = db.create_booking(
-            callback.from_user.id,
-            data.get("service"),
-            data.get("name"),
-            data.get("phone"),
-            data.get("date"),
-            data.get("time"),
-        )
-    except Exception as e:
-        print("DB ERROR:", e)
+    booking_id = db.create_booking(
+        callback.from_user.id,
+        data.get("name"),
+        data.get("phone"),
+        data.get("date"),
+        data.get("time"),
+    )
+
+    if not booking_id:
         await callback.message.edit_text(
-            "❌ Ошибка CRM (DB)",
+            "❌ Слот уже занят",
             reply_markup=back_to_menu_kb(),
         )
         await state.clear()
@@ -284,14 +244,7 @@ async def confirm(callback: CallbackQuery, state: FSMContext, db: Database):
 
     await state.clear()
 
-    if not booking_id:
-        await callback.message.edit_text(
-            "❌ Слот уже занят (CRM lock)",
-            reply_markup=back_to_menu_kb(),
-        )
-        return
-
     await callback.message.edit_text(
-        "✅ CRM: запись создана",
+        "✅ Ты записан!",
         reply_markup=back_to_menu_kb(),
     )
