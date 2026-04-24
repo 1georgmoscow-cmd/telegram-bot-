@@ -15,16 +15,6 @@ async def safe_answer(callback: CallbackQuery):
         pass
 
 
-# 📅 Запись
-@router.callback_query(F.data == "start_booking")
-async def start_booking(callback: CallbackQuery):
-    await safe_answer(callback)
-    await callback.message.edit_text(
-        "📅 Запись\n\nВыбери удобное время (скоро сделаем нормально)",
-        reply_markup=back_to_menu_kb()
-    )
-
-
 # 📖 Моя запись
 @router.callback_query(F.data == "my_booking")
 async def my_booking(callback: CallbackQuery):
@@ -73,10 +63,3 @@ async def portfolio(callback: CallbackQuery):
 async def back_menu(callback: CallbackQuery):
     await safe_answer(callback)
     await show_main_menu(callback)
-
-
-# 🧠 DEBUG (можешь удалить потом)
-@router.callback_query()
-async def debug_all(callback: CallbackQuery):
-    print("CLICK:", callback.data)
-    await callback.answer()
