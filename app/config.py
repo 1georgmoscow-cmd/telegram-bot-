@@ -41,3 +41,7 @@ def load_settings() -> Settings:
         database_path=db_path,
         timezone=timezone,
     )
+
+
+# 💎 ВОТ ЭТО ТЫ НЕ ДОБАВИЛ (ГЛАВНАЯ ЧАСТЬ FIX)
+settings = load_settings()
