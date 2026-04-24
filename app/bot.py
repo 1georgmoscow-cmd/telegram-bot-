@@ -7,7 +7,10 @@ from aiogram.enums import ParseMode
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.config import load_settings
-from app.database.db import Database
+
+# ❗ НОВАЯ АРХИТЕКТУРА
+from app.database.connection import get_connection
+from app.repositories.booking_repo import BookingRepository
 
 from app.handlers import (
     admin,
@@ -26,9 +29,15 @@ async def main() -> None:
 
     settings = load_settings()
 
-    db = Database(settings.database_path)
-    db.init()
+    # =========================
+    # DB
+    # =========================
+    conn = get_connection(settings.database_path)
+    booking_repo = BookingRepository(conn)
 
+    # =========================
+    # BOT
+    # =========================
     bot = Bot(
         token=settings.bot_token,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
@@ -36,32 +45,37 @@ async def main() -> None:
 
     dp = Dispatcher()
 
+    # =========================
+    # SCHEDULER
+    # =========================
     scheduler = AsyncIOScheduler(timezone=settings.timezone)
     scheduler.start()
 
     reminder_service = ReminderService(
         scheduler=scheduler,
-        db=db,
+        db=booking_repo,  # 👈 теперь repo
         bot=bot,
     )
 
     reminder_service.restore_jobs_from_db()
 
-    # 🔥 ВАЖНО: booking ПЕРВЫЙ
+    # =========================
+    # ROUTERS
+    # =========================
     dp.include_router(start.router)
     dp.include_router(subscription.router)
-
-    dp.include_router(booking.router)        # 👈 сюда должен попадать start_booking
-
-    dp.include_router(menu_handlers.router)   # 👈 UI кнопки (prices, portfolio)
-
+    dp.include_router(booking.router)
+    dp.include_router(menu_handlers.router)
     dp.include_router(misc.router)
     dp.include_router(admin.router)
 
+    # =========================
+    # START
+    # =========================
     await dp.start_polling(
         bot,
         settings=settings,
-        db=db,
+        repo=booking_repo,              # 👈 ВАЖНО
         reminder_service=reminder_service,
     )
 
