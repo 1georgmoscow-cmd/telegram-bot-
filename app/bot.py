@@ -8,7 +8,6 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.config import load_settings
 
-# 🔥 новая архитектура
 from app.database.database import Database
 from app.repositories.booking_repo import BookingRepository
 
@@ -48,6 +47,14 @@ async def main() -> None:
     dp = Dispatcher()
 
     # =========================
+    # GLOBAL DEPENDENCIES (ВАЖНО)
+    # =========================
+    dp.workflow_data.update(
+        settings=settings,
+        repo=booking_repo,
+    )
+
+    # =========================
     # SCHEDULER
     # =========================
     scheduler = AsyncIOScheduler(timezone=settings.timezone)
@@ -55,11 +62,15 @@ async def main() -> None:
 
     reminder_service = ReminderService(
         scheduler=scheduler,
-        repo=booking_repo,   # 👈 ВАЖНО
+        repo=booking_repo,
         bot=bot,
     )
 
     reminder_service.restore_jobs_from_db()
+
+    dp.workflow_data.update(
+        reminder_service=reminder_service,
+    )
 
     # =========================
     # ROUTERS
@@ -74,12 +85,7 @@ async def main() -> None:
     # =========================
     # START
     # =========================
-    await dp.start_polling(
-        bot,
-        settings=settings,
-        repo=booking_repo,              # 👈 ВАЖНО
-        reminder_service=reminder_service,
-    )
+    await dp.start_polling(bot)
 
 
 if __name__ == "__main__":
