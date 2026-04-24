@@ -9,7 +9,7 @@ from aiogram.types import (
 async def show_main_menu(event: Message | CallbackQuery):
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="📅 Записаться", callback_data="book")],
+            [InlineKeyboardButton(text="📅 Записаться", callback_data="start_booking")],
             [InlineKeyboardButton(text="📖 Моя запись", callback_data="my_bookings")],
             [InlineKeyboardButton(text="💰 Прайсы", callback_data="prices")],
             [InlineKeyboardButton(text="🖼 Портфолио", callback_data="portfolio")],
@@ -19,10 +19,7 @@ async def show_main_menu(event: Message | CallbackQuery):
 
     text = "🏠 <b>Главное меню</b>"
 
-    # 🔥 если это callback
     if isinstance(event, CallbackQuery):
         await event.message.edit_text(text, reply_markup=kb)
-
-    # 🔥 если это message (/start)
     else:
         await event.answer(text, reply_markup=kb)
