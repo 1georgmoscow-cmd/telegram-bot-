@@ -18,6 +18,7 @@ async def safe_answer(callback: CallbackQuery):
 @router.callback_query(F.data == "prices")
 async def prices(callback: CallbackQuery):
     await safe_answer(callback)
+
     await callback.message.edit_text(
         "💰 Прайсы:\n\n"
         "— Услуга 1: 1000₽\n"
@@ -31,6 +32,7 @@ async def prices(callback: CallbackQuery):
 @router.callback_query(F.data == "portfolio")
 async def portfolio(callback: CallbackQuery):
     await safe_answer(callback)
+
     await callback.message.edit_text(
         "🖼 Портфолио\n\nНажми кнопку ниже 👇",
         reply_markup=portfolio_kb()
@@ -44,8 +46,8 @@ async def back_menu(callback: CallbackQuery):
     await show_main_menu(callback)
 
 
-# 🧠 DEBUG (оставь, полезно)
-@router.callback_query()
-async def debug_all(callback: CallbackQuery):
-    print("CLICK:", callback.data)
+# 🧠 DEBUG (ТОЛЬКО С ТЕГОМ — НЕ ЛОВИТ ВСЁ)
+@router.callback_query(F.data.startswith("debug_"))
+async def debug(callback: CallbackQuery):
+    print("DEBUG:", callback.data)
     await callback.answer()
