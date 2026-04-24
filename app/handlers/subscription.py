@@ -14,11 +14,10 @@ CHECK_COOLDOWN = {}
 
 
 @router.callback_query(F.data.in_({"check_subscription", "check_sub"}))
-async def check_subscription(
+async def check_subscription_handler(
     callback: CallbackQuery,
     bot: Bot,
     settings,
-    db
 ) -> None:
 
     user_id = callback.from_user.id
@@ -44,27 +43,23 @@ async def check_subscription(
 
         print("SUBSCRIBED RESULT:", subscribed)
 
-        # ❌ НЕ ПОДПИСАН
         if not subscribed:
             await callback.message.edit_text(
-                "❌ Ты не подписан на канал.\n\n"
-                "Подпишись и нажми кнопку ещё раз.",
+                "❌ Ты не подписан на канал.\n\nПодпишись и нажми кнопку ещё раз.",
                 reply_markup=subscription_kb(settings.channel_link)
             )
             return
 
-        # ✅ ПОДПИСАН
         try:
             await callback.message.edit_text("⏳ Проверка успешна...")
         except TelegramBadRequest:
-            pass  # если не изменилось — игнор
+            pass
 
         await show_main_menu(callback)
 
     except Exception as e:
         print("SUBSCRIPTION ERROR:", e)
 
-        # ⚠️ ВАЖНО: НЕ создаём новое сообщение
         try:
             await callback.message.edit_text(
                 "⚠️ Ошибка проверки подписки.\nПопробуй ещё раз.",
