@@ -2,13 +2,13 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
 
 
-async def check_subscription(
+async def is_subscribed(
     bot: Bot,
-    user_id: int,
     channel_id: int,
+    user_id: int,
 ) -> bool:
     """
-    Проверяет, подписан ли пользователь на канал
+    Проверка подписки пользователя на канал
     """
 
     try:
@@ -20,9 +20,7 @@ async def check_subscription(
         return member.status in ("member", "administrator", "creator")
 
     except TelegramBadRequest:
-        # если бот не имеет доступа к каналу или канал неверный
         return False
 
     except Exception:
-        # на всякий случай чтобы не ломать flow
         return False
