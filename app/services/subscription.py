@@ -1,10 +1,11 @@
 from aiogram import Bot
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 
 
-async def is_subscribed(bot: Bot, channel_id: int, user_id: int) -> bool:
+async def is_subscribed(bot: Bot, channel_id, user_id: int) -> bool:
     """
-    Проверка подписки пользователя
+    Проверка подписки пользователя в канале
+    channel_id может быть int или str (@channel)
     """
 
     try:
@@ -18,5 +19,7 @@ async def is_subscribed(bot: Bot, channel_id: int, user_id: int) -> bool:
     except TelegramBadRequest:
         return False
 
-    except Exception:
+    except TelegramForbiddenError:
+        # бот не админ в канале или нет доступа
+        print("BOT HAS NO ACCESS TO CHANNEL")
         return False
