@@ -39,7 +39,6 @@ async def start_booking(
 ):
     await callback.answer()
 
-    # если уже есть активная запись
     if repo.has_active_booking(callback.from_user.id):
         b = repo.get_active_booking(callback.from_user.id)
 
@@ -49,11 +48,11 @@ async def start_booking(
         )
         return
 
-    # ✅ ПРОВЕРКА ПОДПИСКИ (ИСПРАВЛЕНО)
+    # ✅ ИСПРАВЛЕНО: используем is_subscribed
     subscribed = await is_subscribed(
-        bot,
-        settings.channel_id,
-        callback.from_user.id,
+        bot=bot,
+        channel_id=settings.channel_id,
+        user_id=callback.from_user.id,
     )
 
     if not subscribed:
@@ -113,7 +112,6 @@ async def pick_date(
     await callback.answer()
 
     date_str = callback.data.split(":", 1)[1]
-
     slots = repo.get_free_slots(date_str)
 
     if not slots:
