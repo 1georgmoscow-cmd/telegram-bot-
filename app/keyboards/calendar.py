@@ -1,13 +1,13 @@
 import calendar
 from datetime import date, timedelta
-
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
 
 WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 
 
 # =========================
-# 📌 утилита смены месяца
+# 📌 shift month safe
 # =========================
 def _shift_month(base: date, offset: int) -> tuple[int, int]:
     month_index = (base.month - 1) + offset
@@ -17,7 +17,7 @@ def _shift_month(base: date, offset: int) -> tuple[int, int]:
 
 
 # =========================
-# 📅 PRO календарь
+# 📅 CRM CALENDAR (FIXED)
 # =========================
 def month_calendar_kb(
     available_days: set[str],
@@ -25,71 +25,92 @@ def month_calendar_kb(
 ) -> InlineKeyboardMarkup:
 
     today = date.today()
-    max_day = today + timedelta(days=90)  # 3 месяца вперёд
+    max_day = today + timedelta(days=90)
 
     year, month = _shift_month(today, month_offset)
     cal = calendar.Calendar(firstweekday=0)
 
     keyboard: list[list[InlineKeyboardButton]] = []
 
-    # 📅 заголовок
+    # =========================
+    # 📅 HEADER
+    # =========================
     keyboard.append([
         InlineKeyboardButton(
             text=f"📅 {calendar.month_name[month]} {year}",
-            callback_data="calendar:noop",
+            callback_data="noop"
         )
     ])
 
-    # 📆 дни недели
+    # =========================
+    # 📆 WEEKDAYS
+    # =========================
     keyboard.append([
-        InlineKeyboardButton(text=day, callback_data="calendar:noop")
-        for day in WEEKDAYS
+        InlineKeyboardButton(text=d, callback_data="noop")
+        for d in WEEKDAYS
     ])
 
-    # 📆 дни месяца
+    # =========================
+    # 📆 DAYS GRID
+    # =========================
     for week in cal.monthdatescalendar(year, month):
-        row: list[InlineKeyboardButton] = []
+        row = []
 
         for day in week:
-            day_str = day.strftime("%Y-%m-%d")
+            day_str = day.isoformat()
 
             in_range = today <= day <= max_day
+            is_current_month = day.month == month
             is_available = day_str in available_days
 
-            if day.month != month or not in_range:
+            # пустые клетки (чужой месяц)
+            if not is_current_month:
                 row.append(
                     InlineKeyboardButton(
                         text=" ",
-                        callback_data="calendar:noop",
+                        callback_data="noop"
                     )
                 )
+                continue
 
-            elif is_available:
+            # недоступные дни
+            if not in_range:
                 row.append(
                     InlineKeyboardButton(
-                        text=str(day.day),
-                        callback_data=f"pick_date:{day_str}",
+                        text=f"·{day.day}",
+                        callback_data="noop"
                     )
                 )
+                continue
 
+            # доступные дни (КЛИКАБЕЛЬНЫЕ)
+            if is_available:
+                row.append(
+                    InlineKeyboardButton(
+                        text=f"{day.day}",
+                        callback_data=f"pick_date:{day_str}"
+                    )
+                )
             else:
                 row.append(
                     InlineKeyboardButton(
                         text=f"·{day.day}",
-                        callback_data="calendar:noop",
+                        callback_data="noop"
                     )
                 )
 
         keyboard.append(row)
 
-    # 🔁 навигация
+    # =========================
+    # 🔁 NAVIGATION
+    # =========================
     nav = []
 
     if month_offset > 0:
         nav.append(
             InlineKeyboardButton(
                 text="◀️",
-                callback_data=f"cal_month:{month_offset - 1}",
+                callback_data=f"cal_month:{month_offset - 1}"
             )
         )
 
@@ -97,23 +118,28 @@ def month_calendar_kb(
         nav.append(
             InlineKeyboardButton(
                 text="▶️",
-                callback_data=f"cal_month:{month_offset + 1}",
+                callback_data=f"cal_month:{month_offset + 1}"
             )
         )
 
     if nav:
         keyboard.append(nav)
 
-    # 🔙 меню
+    # =========================
+    # 🏠 MENU
+    # =========================
     keyboard.append([
-        InlineKeyboardButton(text="🏠 В меню", callback_data="back_menu")
+        InlineKeyboardButton(
+            text="🏠 В меню",
+            callback_data="back_menu"
+        )
     ])
 
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
 # =========================
-# ⏰ слоты времени
+# ⏰ SLOTS
 # =========================
 def slots_kb(date_str: str, slots: list[str]) -> InlineKeyboardMarkup:
     keyboard = []
@@ -122,35 +148,54 @@ def slots_kb(date_str: str, slots: list[str]) -> InlineKeyboardMarkup:
         keyboard.append([
             InlineKeyboardButton(
                 text=slot,
-                callback_data=f"pick_time:{date_str}:{slot}",
+                callback_data=f"pick_time:{date_str}:{slot}"
             )
         ])
 
     keyboard.append([
-        InlineKeyboardButton(text="⬅️ Назад", callback_data="back_calendar")
+        InlineKeyboardButton(
+            text="⬅️ Назад",
+            callback_data="back_calendar"
+        )
     ])
 
     keyboard.append([
-        InlineKeyboardButton(text="🏠 В меню", callback_data="back_menu")
+        InlineKeyboardButton(
+            text="🏠 В меню",
+            callback_data="back_menu"
+        )
     ])
 
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
 # =========================
-# ✅ подтверждение
+# ✅ CONFIRM
 # =========================
 def confirm_booking_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Подтвердить", callback_data="confirm_booking")],
-            [InlineKeyboardButton(text="❌ Отмена", callback_data="back_menu")],
+            [
+                InlineKeyboardButton(
+                    text="✅ Подтвердить",
+                    callback_data="confirm_booking"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ Отмена",
+                    callback_data="back_menu"
+                )
+            ],
         ]
     )
 
 
 # =========================
-# 📅 формат даты
+# 📅 FORMAT DATE
 # =========================
 def format_ru_date(date_str: str) -> str:
-    return date.fromisoformat(date_str).strftime("%d.%m.%Y")
+    try:
+        return date.fromisoformat(date_str).strftime("%d.%m.%Y")
+    except Exception:
+        return "неверная дата"
