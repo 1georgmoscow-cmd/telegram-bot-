@@ -6,7 +6,11 @@ from aiogram.types import CallbackQuery, Message
 
 from app.config import Settings
 from app.repositories.booking_repo import BookingRepository
-from app.keyboards.admin import admin_menu_kb, bookings_manage_kb, slots_manage_kb
+from app.keyboards.admin import (
+    admin_menu_kb,
+    bookings_manage_kb,
+    slots_manage_kb,
+)
 from app.keyboards.calendar import format_ru_date, month_calendar_kb
 from app.keyboards.common import back_to_menu_kb
 from app.services.scheduler import ReminderService
@@ -18,11 +22,11 @@ router = Router()
 # =========================
 # HELPERS
 # =========================
-def _is_admin(user_id: int, settings: Settings) -> bool:
+def is_admin(user_id: int, settings: Settings) -> bool:
     return user_id == settings.admin_id
 
 
-def _is_valid_date(value: str) -> bool:
+def is_valid_date(value: str) -> bool:
     try:
         date.fromisoformat(value)
         return True
@@ -31,11 +35,11 @@ def _is_valid_date(value: str) -> bool:
 
 
 # =========================
-# PANEL
+# ADMIN PANEL
 # =========================
 @router.callback_query(F.data == "admin_panel")
 async def admin_panel(callback: CallbackQuery, settings: Settings, state: FSMContext):
-    if not _is_admin(callback.from_user.id, settings):
+    if not is_admin(callback.from_user.id, settings):
         await callback.answer("Нет доступа", show_alert=True)
         return
 
@@ -48,73 +52,71 @@ async def admin_panel(callback: CallbackQuery, settings: Settings, state: FSMCon
 
 
 # =========================
-# ADD WORK DAY (через repo)
+# WORK DAYS
 # =========================
 @router.callback_query(F.data == "admin_add_day")
-async def admin_add_day_start(callback: CallbackQuery, settings: Settings, state: FSMContext):
-    if not _is_admin(callback.from_user.id, settings):
+async def add_day_start(callback: CallbackQuery, settings: Settings, state: FSMContext):
+    if not is_admin(callback.from_user.id, settings):
         await callback.answer("Нет доступа", show_alert=True)
         return
 
     await state.set_state(AdminStates.waiting_add_day)
 
     await callback.message.edit_text(
-        "Введи дату рабочего дня: YYYY-MM-DD",
+        "Введи дату (YYYY-MM-DD):",
         reply_markup=back_to_menu_kb(),
     )
 
 
 @router.message(AdminStates.waiting_add_day)
-async def admin_add_day_save(message: Message, repo: BookingRepository, state: FSMContext):
+async def add_day_save(message: Message, repo: BookingRepository, state: FSMContext):
     day = message.text.strip()
 
-    if not _is_valid_date(day):
-        await message.answer("Неверный формат даты")
+    if not is_valid_date(day):
+        await message.answer("Неверная дата")
         return
 
-    # ⚠️ предполагается что метод есть в repo
     repo.add_work_day(day)
 
     await state.clear()
-    await message.answer("Рабочий день добавлен", reply_markup=admin_menu_kb())
+    await message.answer("День добавлен", reply_markup=admin_menu_kb())
 
 
 # =========================
 # ADD SLOT
 # =========================
 @router.callback_query(F.data == "admin_add_slot")
-async def admin_add_slot_start(callback: CallbackQuery, settings: Settings, state: FSMContext):
-    if not _is_admin(callback.from_user.id, settings):
+async def add_slot_start(callback: CallbackQuery, settings: Settings, state: FSMContext):
+    if not is_admin(callback.from_user.id, settings):
         await callback.answer("Нет доступа", show_alert=True)
         return
 
     await state.set_state(AdminStates.waiting_add_slot_date)
 
-    await callback.message.edit_text("Введи дату: YYYY-MM-DD")
+    await callback.message.edit_text("Введи дату (YYYY-MM-DD):")
 
 
 @router.message(AdminStates.waiting_add_slot_date)
-async def admin_add_slot_get_date(message: Message, state: FSMContext):
-    slot_date = message.text.strip()
-
-    if not _is_valid_date(slot_date):
+async def add_slot_date(message: Message, state: FSMContext):
+    if not is_valid_date(message.text):
         await message.answer("Неверная дата")
         return
 
-    await state.update_data(slot_date=slot_date)
+    await state.update_data(date=message.text)
     await state.set_state(AdminStates.waiting_add_slot_time)
 
-    await message.answer("Введи время: HH:MM")
+    await message.answer("Введи время (HH:MM):")
 
 
 @router.message(AdminStates.waiting_add_slot_time)
-async def admin_add_slot_save(message: Message, repo: BookingRepository, state: FSMContext):
+async def add_slot_save(
+    message: Message,
+    repo: BookingRepository,
+    state: FSMContext,
+):
     data = await state.get_data()
 
-    slot_date = data["slot_date"]
-    slot_time = message.text.strip()
-
-    repo.add_slot(slot_date, slot_time)
+    repo.add_slot(data["date"], message.text.strip())
 
     await state.clear()
     await message.answer("Слот добавлен", reply_markup=admin_menu_kb())
@@ -124,25 +126,28 @@ async def admin_add_slot_save(message: Message, repo: BookingRepository, state: 
 # DELETE SLOT
 # =========================
 @router.callback_query(F.data == "admin_delete_slot")
-async def admin_delete_slot_start(callback: CallbackQuery, settings: Settings, state: FSMContext):
-    if not _is_admin(callback.from_user.id, settings):
+async def delete_slot_start(callback: CallbackQuery, settings: Settings, state: FSMContext):
+    if not is_admin(callback.from_user.id, settings):
         await callback.answer("Нет доступа", show_alert=True)
         return
 
     await state.set_state(AdminStates.waiting_delete_slot_date)
 
-    await callback.message.edit_text("Введи дату: YYYY-MM-DD")
+    await callback.message.edit_text("Введи дату:")
 
 
 @router.message(AdminStates.waiting_delete_slot_date)
-async def admin_delete_slot_date(message: Message, repo: BookingRepository, state: FSMContext):
+async def delete_slot_date(message: Message, repo: BookingRepository, state: FSMContext):
     date_str = message.text.strip()
 
-    if not _is_valid_date(date_str):
+    if not is_valid_date(date_str):
         await message.answer("Неверная дата")
         return
 
-    slots = repo.get_free_slots(date_str)
+    slots = repo.db.fetchall(
+        "SELECT time FROM slots WHERE date=?",
+        (date_str,),
+    )
 
     if not slots:
         await message.answer("Нет слотов", reply_markup=admin_menu_kb())
@@ -153,13 +158,21 @@ async def admin_delete_slot_date(message: Message, repo: BookingRepository, stat
 
     await message.answer(
         "Выбери слот:",
-        reply_markup=slots_manage_kb("admin_delete_slot_pick", date_str, slots),
+        reply_markup=slots_manage_kb(
+            "admin_delete_slot_pick",
+            date_str,
+            [s["time"] for s in slots],
+        ),
     )
 
 
 @router.callback_query(F.data.startswith("admin_delete_slot_pick:"))
-async def admin_delete_slot_pick(callback: CallbackQuery, repo: BookingRepository, settings: Settings):
-    if not _is_admin(callback.from_user.id, settings):
+async def delete_slot_pick(
+    callback: CallbackQuery,
+    repo: BookingRepository,
+    settings: Settings,
+):
+    if not is_admin(callback.from_user.id, settings):
         await callback.answer("Нет доступа", show_alert=True)
         return
 
@@ -174,19 +187,20 @@ async def admin_delete_slot_pick(callback: CallbackQuery, repo: BookingRepositor
 # VIEW SCHEDULE
 # =========================
 @router.callback_query(F.data == "admin_view_schedule")
-async def admin_view_schedule_start(
+async def view_schedule_start(
     callback: CallbackQuery,
     settings: Settings,
     state: FSMContext,
     repo: BookingRepository,
 ):
-    if not _is_admin(callback.from_user.id, settings):
+    if not is_admin(callback.from_user.id, settings):
         await callback.answer("Нет доступа", show_alert=True)
         return
 
     await state.set_state(AdminStates.waiting_view_schedule)
 
     today = date.today()
+
     days = set(
         repo.get_month_work_days(
             today.isoformat(),
@@ -201,7 +215,7 @@ async def admin_view_schedule_start(
 
 
 @router.callback_query(AdminStates.waiting_view_schedule, F.data.startswith("pick_date:"))
-async def admin_view_schedule_pick(
+async def view_schedule_pick(
     callback: CallbackQuery,
     repo: BookingRepository,
     state: FSMContext,
@@ -223,7 +237,11 @@ async def admin_view_schedule_pick(
         else:
             lines.append(f"{row['time']} — свободно")
 
-    await callback.message.edit_text("\n".join(lines), reply_markup=admin_menu_kb())
+    await callback.message.edit_text(
+        "\n".join(lines),
+        reply_markup=admin_menu_kb(),
+    )
+
     await state.clear()
 
 
@@ -231,18 +249,22 @@ async def admin_view_schedule_pick(
 # CANCEL BOOKING
 # =========================
 @router.callback_query(F.data == "admin_cancel_booking")
-async def admin_cancel_booking_start(callback: CallbackQuery, settings: Settings, state: FSMContext):
-    if not _is_admin(callback.from_user.id, settings):
+async def cancel_booking_start(callback: CallbackQuery, settings: Settings, state: FSMContext):
+    if not is_admin(callback.from_user.id, settings):
         await callback.answer("Нет доступа", show_alert=True)
         return
 
     await state.set_state(AdminStates.waiting_cancel_booking_date)
 
-    await callback.message.edit_text("Введи дату: YYYY-MM-DD")
+    await callback.message.edit_text("Введи дату:")
 
 
 @router.message(AdminStates.waiting_cancel_booking_date)
-async def admin_cancel_booking_date(message: Message, repo: BookingRepository, state: FSMContext):
+async def cancel_booking_date(
+    message: Message,
+    repo: BookingRepository,
+    state: FSMContext,
+):
     date_str = message.text.strip()
 
     bookings = repo.get_bookings_for_date(date_str)
@@ -266,13 +288,13 @@ async def admin_cancel_booking_date(message: Message, repo: BookingRepository, s
 
 
 @router.callback_query(F.data.startswith("admin_cancel_by_id:"))
-async def admin_cancel_by_id(
+async def cancel_booking_by_id(
     callback: CallbackQuery,
     repo: BookingRepository,
     settings: Settings,
     reminder_service: ReminderService,
 ):
-    if not _is_admin(callback.from_user.id, settings):
+    if not is_admin(callback.from_user.id, settings):
         await callback.answer("Нет доступа", show_alert=True)
         return
 
