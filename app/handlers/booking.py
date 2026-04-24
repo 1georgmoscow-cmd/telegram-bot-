@@ -46,7 +46,7 @@ async def show_calendar(message, db: Database):
 # =========================
 # 📌 КНОПКА "ЗАПИСАТЬСЯ"
 # =========================
-@router.callback_query(StateFilter(None), F.data == "start_booking")
+@router.callback_query(F.data.in_(["start_booking", "book"]))
 async def start_booking(callback: CallbackQuery, bot: Bot, settings: Settings, db: Database):
     try:
         await callback.answer()
