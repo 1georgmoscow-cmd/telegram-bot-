@@ -4,7 +4,6 @@ from aiogram import Bot, F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter
 from aiogram.types import CallbackQuery, Message
-from aiogram.exceptions import TelegramBadRequest
 
 from app.config import Settings
 from app.database.db import Database
@@ -20,10 +19,6 @@ from app.states.booking import BookingStates
 
 router = Router()
 
-
-# =========================
-# 💎 услуги
-# =========================
 SERVICES = {
     "hair": "💇‍♀️ Стрижка",
     "nails": "💅 Маникюр",
@@ -31,26 +26,25 @@ SERVICES = {
 }
 
 
-# =========================
-# 🔒 safe edit (фикс падений Telegram)
-# =========================
-async def safe_edit(message: Message, text: str, reply_markup=None):
-    try:
-        await message.edit_text(text, reply_markup=reply_markup)
-    except TelegramBadRequest:
-        pass
-
-
-# =========================
-# 📅 диапазон дат
-# =========================
 def get_range():
     today = date.today()
     return today, today + timedelta(days=60)
 
 
+def service_kb():
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=v, callback_data=f"service:{k}")]
+            for k, v in SERVICES.items()
+        ]
+        + [[InlineKeyboardButton(text="🏠 Меню", callback_data="back_menu")]]
+    )
+
+
 # =========================
-# 📌 старт записи
+# START BOOKING
 # =========================
 @router.callback_query(StateFilter(None), F.data.in_(["start_booking", "book"]))
 async def start_booking(callback: CallbackQuery, bot: Bot, settings: Settings, db: Database):
@@ -58,83 +52,65 @@ async def start_booking(callback: CallbackQuery, bot: Bot, settings: Settings, d
 
     if db.has_active_booking(callback.from_user.id):
         b = db.get_active_booking(callback.from_user.id)
-
-        await safe_edit(
-            callback.message,
-            f"📌 У тебя уже есть запись:\n\n"
-            f"💎 {b['name']}\n"
-            f"📅 {b['date']} {b['time']}",
-            back_to_menu_kb(),
+        await callback.message.edit_text(
+            f"📌 Уже есть запись:\n\n{b['date']} {b['time']}",
+            reply_markup=back_to_menu_kb(),
         )
         return
 
-    try:
-        subscribed = await is_subscribed(bot, settings.channel_id, callback.from_user.id)
-    except Exception:
-        subscribed = False
+    subscribed = await is_subscribed(bot, settings.channel_id, callback.from_user.id)
 
     if not subscribed:
-        await safe_edit(
-            callback.message,
-            "❗ Подпишись на канал, чтобы записаться",
-            subscription_kb(settings.channel_link),
+        await callback.message.edit_text(
+            "❗ Подпишись",
+            reply_markup=subscription_kb(settings.channel_link),
         )
         return
 
-    await safe_edit(
-        callback.message,
+    await callback.message.edit_text(
         "💎 Выбери услугу:",
-        service_kb(),
+        reply_markup=service_kb(),
     )
 
 
 # =========================
-# 📌 клавиатура услуг
-# =========================
-def service_kb():
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text=name, callback_data=f"service:{key}")]
-            for key, name in SERVICES.items()
-        ]
-        + [[InlineKeyboardButton(text="🏠 Меню", callback_data="back_menu")]]
-    )
-
-
-# =========================
-# 📌 выбор услуги
+# SERVICE
 # =========================
 @router.callback_query(F.data.startswith("service:"))
 async def choose_service(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
+    service = callback.data.split(":")[1]
 
-    service = callback.data.split("service:")[1]
     await state.update_data(service=service)
 
-    start, end = get_range()
-
-    days = set(
-        (start + timedelta(days=i)).strftime("%Y-%m-%d")
-        for i in range((end - start).days + 1)
-    )
-
-    await safe_edit(
-        callback.message,
+    await callback.message.edit_text(
         "📅 Выбери дату:",
-        month_calendar_kb(days),
+        reply_markup=month_calendar_kb(set()),
     )
 
 
 # =========================
-# 📌 выбор даты
+# MONTH NAV (ВАЖНО БЫЛО ПРОПУЩЕНО)
+# =========================
+@router.callback_query(F.data.startswith("cal_month:"))
+async def change_month(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+
+    month_offset = int(callback.data.split(":")[1])
+
+    await callback.message.edit_reply_markup(
+        reply_markup=month_calendar_kb(set(), month_offset)
+    )
+
+
+# =========================
+# DATE
 # =========================
 @router.callback_query(F.data.startswith("pick_date:"))
 async def pick_date(callback: CallbackQuery, db: Database, state: FSMContext):
     await callback.answer()
 
-    date_str = callback.data.split("pick_date:")[1]
+    date_str = callback.data.split(":", 1)[1]
     slots = db.get_free_slots(date_str)
 
     if not slots:
@@ -143,35 +119,33 @@ async def pick_date(callback: CallbackQuery, db: Database, state: FSMContext):
 
     await state.update_data(date=date_str)
 
-    await safe_edit(
-        callback.message,
-        f"📅 {format_ru_date(date_str)}\n\n⏰ Выбери время:",
-        slots_kb(date_str, slots),
+    await callback.message.edit_text(
+        f"📅 {format_ru_date(date_str)}\n\nВыбери время:",
+        reply_markup=slots_kb(date_str, slots),
     )
 
 
 # =========================
-# 📌 выбор времени (FIXED CRITICAL BUG)
+# TIME
 # =========================
 @router.callback_query(F.data.startswith("pick_time:"))
 async def pick_time(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
     try:
-        payload = callback.data.split("pick_time:")[1]
-        date_str, time_str = payload.split(":")
-    except Exception:
-        await callback.answer("Ошибка данных", show_alert=True)
+        _, date_str, time_str = callback.data.split(":", 2)
+    except:
+        await callback.answer("Ошибка", show_alert=True)
         return
 
     await state.update_data(time=time_str)
     await state.set_state(BookingStates.waiting_for_name)
 
-    await safe_edit(callback.message, "✍️ Введи имя:")
+    await callback.message.edit_text("✍️ Введи имя:")
 
 
 # =========================
-# 📌 имя
+# NAME
 # =========================
 @router.message(BookingStates.waiting_for_name)
 async def get_name(message: Message, state: FSMContext):
@@ -182,7 +156,7 @@ async def get_name(message: Message, state: FSMContext):
 
 
 # =========================
-# 📌 телефон
+# PHONE
 # =========================
 @router.message(BookingStates.waiting_for_phone)
 async def get_phone(message: Message, state: FSMContext):
@@ -191,7 +165,7 @@ async def get_phone(message: Message, state: FSMContext):
     await state.update_data(phone=message.text)
 
     await message.answer(
-        "📌 Проверь запись:\n\n"
+        f"📌 Проверка:\n\n"
         f"💎 {data.get('service')}\n"
         f"📅 {data.get('date')}\n"
         f"⏰ {data.get('time')}\n"
@@ -202,7 +176,7 @@ async def get_phone(message: Message, state: FSMContext):
 
 
 # =========================
-# 📌 подтверждение
+# CONFIRM
 # =========================
 @router.callback_query(F.data == "confirm_booking")
 async def confirm(callback: CallbackQuery, state: FSMContext, db: Database):
@@ -210,25 +184,37 @@ async def confirm(callback: CallbackQuery, state: FSMContext, db: Database):
 
     data = await state.get_data()
 
-    try:
-        booking_id = db.create_booking(
-            callback.from_user.id,
-            data.get("name"),
-            data.get("phone"),
-            data.get("date"),
-            data.get("time"),
-        )
-    except Exception as e:
-        print("DB ERROR:", e)
-        await safe_edit(callback.message, "❌ Ошибка записи", back_to_menu_kb())
-        await state.clear()
-        return
+    booking_id = db.create_booking(
+        callback.from_user.id,
+        data.get("service"),
+        data.get("name"),
+        data.get("phone"),
+        data.get("date"),
+        data.get("time"),
+    )
 
     if not booking_id:
-        await safe_edit(callback.message, "❌ Слот занят", back_to_menu_kb())
+        await callback.message.edit_text(
+            "❌ Слот занят",
+            reply_markup=back_to_menu_kb(),
+        )
         await state.clear()
         return
 
     await state.clear()
 
-    await safe_edit(callback.message, "✅ Ты успешно записан!", back_to_menu_kb())
+    await callback.message.edit_text(
+        "✅ Запись создана!",
+        reply_markup=back_to_menu_kb(),
+    )
+
+
+# =========================
+# BACK FIX (ВАЖНО)
+# =========================
+@router.callback_query(F.data == "back_menu")
+async def back(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await state.clear()
+    from app.handlers.ui import show_main_menu
+    await show_main_menu(callback)
