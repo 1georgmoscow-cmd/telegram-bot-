@@ -49,11 +49,11 @@ async def start_booking(
         )
         return
 
-    # 🔥 ПРОВЕРКА ПОДПИСКИ (ИСПРАВЛЕНО)
-    subscribed = await check_subscription(
-        bot=bot,
-        user_id=callback.from_user.id,
-        channel_id=settings.channel_id,
+    # ✅ ПРОВЕРКА ПОДПИСКИ (ИСПРАВЛЕНО)
+    subscribed = await is_subscribed(
+        bot,
+        settings.channel_id,
+        callback.from_user.id,
     )
 
     if not subscribed:
@@ -90,7 +90,6 @@ async def choose_service(
 
     today = date.today()
 
-    # ⚠️ У ТЕБЯ НЕТ get_work_days → заменяем на безопасную логику
     days = repo.get_month_work_days(
         today.isoformat(),
         (today + timedelta(days=90)).isoformat(),
@@ -192,7 +191,6 @@ async def confirm(
 
     data = await state.get_data()
 
-    # защита от пустых данных
     if not all([data.get("date"), data.get("time"), data.get("name"), data.get("phone")]):
         await callback.message.edit_text(
             "❌ Ошибка данных. Начни заново.",
@@ -217,7 +215,6 @@ async def confirm(
         await state.clear()
         return
 
-    # 🔥 РЕМАЙНДЕР
     job_id = reminder_service.schedule_booking_reminder(
         booking_id=booking_id,
         user_id=callback.from_user.id,
