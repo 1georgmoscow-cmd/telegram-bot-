@@ -21,7 +21,7 @@ router = Router()
 
 
 # =========================
-# 📌 услуги (можешь расширять)
+# 💎 услуги
 # =========================
 SERVICES = {
     "hair": "💇‍♀️ Стрижка",
@@ -31,7 +31,7 @@ SERVICES = {
 
 
 # =========================
-# 📅 диапазон дат
+# 📅 диапазон дат (PRO FIX)
 # =========================
 def get_range():
     today = date.today()
@@ -45,36 +45,32 @@ def get_range():
 async def start_booking(callback: CallbackQuery, bot: Bot, settings: Settings, db: Database):
     await callback.answer()
 
-    # уже запись
+    # если уже есть запись
     if db.has_active_booking(callback.from_user.id):
         b = db.get_active_booking(callback.from_user.id)
 
         await callback.message.edit_text(
             f"📌 У тебя уже есть запись:\n\n"
-            f"{b['service']}\n"
-            f"{b['date']} {b['time']}",
+            f"💎 {b['name']}\n"
+            f"📅 {b['date']} {b['time']}",
             reply_markup=back_to_menu_kb(),
         )
         return
 
-    # подписка
+    # проверка подписки
     try:
         subscribed = await is_subscribed(bot, settings.channel_id, callback.from_user.id)
-    except:
+    except Exception:
         subscribed = False
 
     if not subscribed:
         await callback.message.edit_text(
-            "❗ Подпишись для записи",
+            "❗ Подпишись на канал, чтобы записаться",
             reply_markup=subscription_kb(settings.channel_link),
         )
         return
 
     # выбор услуги
-    kb = [
-        [F"service:{k}"] for k in SERVICES.keys()
-    ]
-
     await callback.message.edit_text(
         "💎 Выбери услугу:",
         reply_markup=service_kb(),
@@ -89,8 +85,8 @@ def service_kb():
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text=v, callback_data=f"service:{k}")]
-            for k, v in SERVICES.items()
+            [InlineKeyboardButton(text=name, callback_data=f"service:{key}")]
+            for key, name in SERVICES.items()
         ]
         + [[InlineKeyboardButton(text="🏠 Меню", callback_data="back_menu")]]
     )
@@ -103,16 +99,20 @@ def service_kb():
 async def choose_service(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
-    service = callback.data.split(":")[1]
-
+    service = callback.data.split("service:")[1]
     await state.update_data(service=service)
 
     start, end = get_range()
-    days = set()
+
+    # 🔥 ВАЖНО: теперь реально есть даты
+    available_days = set(
+        (start + timedelta(days=i)).strftime("%Y-%m-%d")
+        for i in range((end - start).days + 1)
+    )
 
     await callback.message.edit_text(
         "📅 Выбери дату:",
-        reply_markup=month_calendar_kb(days),
+        reply_markup=month_calendar_kb(available_days),
     )
 
 
@@ -123,7 +123,7 @@ async def choose_service(callback: CallbackQuery, state: FSMContext):
 async def pick_date(callback: CallbackQuery, db: Database, state: FSMContext):
     await callback.answer()
 
-    date_str = callback.data.split(":", 1)[1]
+    date_str = callback.data.split("pick_date:")[1]
 
     slots = db.get_free_slots(date_str)
 
@@ -134,7 +134,7 @@ async def pick_date(callback: CallbackQuery, db: Database, state: FSMContext):
     await state.update_data(date=date_str)
 
     await callback.message.edit_text(
-        f"📅 {format_ru_date(date_str)}\n\nВыбери время:",
+        f"📅 {format_ru_date(date_str)}\n\n⏰ Выбери время:",
         reply_markup=slots_kb(date_str, slots),
     )
 
@@ -147,9 +147,9 @@ async def pick_time(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
     try:
-        _, date_str, time_str = callback.data.split(":", 2)
-    except:
-        await callback.answer("Ошибка", show_alert=True)
+        _, date_str, time_str = callback.data.split(":")
+    except Exception:
+        await callback.answer("Ошибка данных", show_alert=True)
         return
 
     await state.update_data(time=time_str)
@@ -179,12 +179,12 @@ async def get_phone(message: Message, state: FSMContext):
     await state.update_data(phone=message.text)
 
     await message.answer(
-        "📌 Проверь:\n\n"
-        f"💎 {data.get('service')}\n"
-        f"📅 {data.get('date')}\n"
-        f"⏰ {data.get('time')}\n"
-        f"👤 {data.get('name')}\n"
-        f"📱 {message.text}",
+        "📌 Проверь запись:\n\n"
+        f"💎 Услуга: {data.get('service')}\n"
+        f"📅 Дата: {data.get('date')}\n"
+        f"⏰ Время: {data.get('time')}\n"
+        f"👤 Имя: {data.get('name')}\n"
+        f"📱 Тел: {message.text}",
         reply_markup=confirm_booking_kb(),
     )
 
@@ -201,7 +201,6 @@ async def confirm(callback: CallbackQuery, state: FSMContext, db: Database):
     try:
         booking_id = db.create_booking(
             callback.from_user.id,
-            data.get("service"),
             data.get("name"),
             data.get("phone"),
             data.get("date"),
@@ -218,7 +217,7 @@ async def confirm(callback: CallbackQuery, state: FSMContext, db: Database):
 
     if not booking_id:
         await callback.message.edit_text(
-            "❌ Слот занят",
+            "❌ Слот уже занят",
             reply_markup=back_to_menu_kb(),
         )
         await state.clear()
@@ -227,6 +226,6 @@ async def confirm(callback: CallbackQuery, state: FSMContext, db: Database):
     await state.clear()
 
     await callback.message.edit_text(
-        "✅ Ты записан!",
+        "✅ Ты успешно записан!",
         reply_markup=back_to_menu_kb(),
     )
