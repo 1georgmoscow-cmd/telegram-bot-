@@ -7,7 +7,7 @@ class Database:
         self.conn.row_factory = sqlite3.Row
 
     # =========================
-    # EXECUTE
+    # CORE EXECUTE
     # =========================
     def execute(self, query: str, params: tuple = ()):
         cur = self.conn.cursor()
@@ -15,31 +15,24 @@ class Database:
         self.conn.commit()
         return cur
 
-    # =========================
-    # FETCH ONE
-    # =========================
     def fetchone(self, query: str, params: tuple = ()):
         cur = self.conn.cursor()
         cur.execute(query, params)
         return cur.fetchone()
 
-    # =========================
-    # FETCH ALL
-    # =========================
     def fetchall(self, query: str, params: tuple = ()):
         cur = self.conn.cursor()
         cur.execute(query, params)
         return cur.fetchall()
 
     # =========================
-    # INIT TABLES
+    # INIT DB
     # =========================
     def init(self):
-        self.execute(
-            """
+        self.execute("""
             CREATE TABLE IF NOT EXISTS bookings (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
+                user_id INTEGER NOT NULL,
                 name TEXT,
                 phone TEXT,
                 date TEXT,
@@ -47,5 +40,21 @@ class Database:
                 active INTEGER DEFAULT 1,
                 reminder_job_id TEXT
             )
-            """
-        )
+        """)
+
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS work_days (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT UNIQUE
+            )
+        """)
+
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS slots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT,
+                time TEXT,
+                active INTEGER DEFAULT 1,
+                UNIQUE(date, time)
+            )
+        """)
