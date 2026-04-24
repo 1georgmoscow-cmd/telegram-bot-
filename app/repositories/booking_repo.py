@@ -6,14 +6,14 @@ class BookingRepository:
         self.db = db
 
     # =========================
-    # CREATE BOOKING
+    # CREATE
     # =========================
-    def create_booking(self, user_id, name, phone, date, time):
-        # проверка занятого слота
+    def create_booking(self, user_id: int, name: str, phone: str, date: str, time: str):
         exists = self.db.fetchone(
             "SELECT id FROM bookings WHERE date=? AND time=? AND active=1",
             (date, time),
         )
+
         if exists:
             return None
 
@@ -27,51 +27,41 @@ class BookingRepository:
         return cur.lastrowid
 
     # =========================
-    # CHECK ACTIVE BOOKING
+    # ACTIVE CHECK
     # =========================
-    def has_active_booking(self, user_id):
+    def has_active_booking(self, user_id: int) -> bool:
         row = self.db.fetchone(
             "SELECT id FROM bookings WHERE user_id=? AND active=1",
             (user_id,),
         )
-        return bool(row)
+        return row is not None
 
-    # =========================
-    # GET ACTIVE BOOKING
-    # =========================
-    def get_active_booking(self, user_id):
+    def get_active_booking(self, user_id: int):
         return self.db.fetchone(
             "SELECT * FROM bookings WHERE user_id=? AND active=1",
             (user_id,),
         )
 
     # =========================
-    # GET BUSY SLOTS
+    # SLOTS (RAW DATA ONLY)
     # =========================
-    def get_busy_slots(self, date):
+    def get_busy_slots(self, date: str):
         rows = self.db.fetchall(
             "SELECT time FROM bookings WHERE date=? AND active=1",
             (date,),
         )
-        return [row["time"] for row in rows]
+        return rows
+
+    def get_bookings_for_date(self, date: str):
+        return self.db.fetchall(
+            "SELECT * FROM bookings WHERE date=? AND active=1",
+            (date,),
+        )
 
     # =========================
-    # GET FREE SLOTS
+    # WORK DAYS
     # =========================
-    def get_free_slots(self, date):
-        all_slots = [
-            "10:00", "11:00", "12:00",
-            "13:00", "14:00", "15:00",
-            "16:00", "17:00", "18:00",
-        ]
-
-        busy = self.get_busy_slots(date)
-        return [slot for slot in all_slots if slot not in busy]
-
-    # =========================
-    # GET WORK DAYS
-    # =========================
-    def get_month_work_days(self, start_date, end_date):
+    def get_month_work_days(self, start_date: str, end_date: str):
         rows = self.db.fetchall(
             """
             SELECT DISTINCT date
@@ -80,20 +70,45 @@ class BookingRepository:
             """,
             (start_date, end_date),
         )
-        return [row["date"] for row in rows]
+        return rows
 
     # =========================
-    # FOR SCHEDULER
+    # SCHEDULE VIEW
     # =========================
-    def get_active_bookings_for_restore(self):
+    def get_schedule_by_date(self, date: str):
         return self.db.fetchall(
-            "SELECT * FROM bookings WHERE active=1"
+            """
+            SELECT id as booking_id, name, phone, date, time
+            FROM bookings
+            WHERE date=?
+            ORDER BY time
+            """,
+            (date,),
         )
 
     # =========================
-    # SET REMINDER ID
+    # DELETE / CANCEL
     # =========================
-    def set_reminder_job_id(self, booking_id, job_id):
+    def cancel_booking_by_id(self, booking_id: int):
+        booking = self.db.fetchone(
+            "SELECT * FROM bookings WHERE id=?",
+            (booking_id,),
+        )
+
+        if not booking:
+            return None
+
+        self.db.execute(
+            "UPDATE bookings SET active=0 WHERE id=?",
+            (booking_id,),
+        )
+
+        return booking
+
+    # =========================
+    # REMINDER
+    # =========================
+    def set_reminder_job_id(self, booking_id: int, job_id: str | None):
         self.db.execute(
             "UPDATE bookings SET reminder_job_id=? WHERE id=?",
             (job_id, booking_id),
