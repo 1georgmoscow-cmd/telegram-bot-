@@ -1,39 +1,28 @@
-from aiogram import Router
-from aiogram.types import Message
-from aiogram.filters import CommandStart
+@router.callback_query(StateFilter(None), F.data.in_(["start_booking", "book"]))
+async def start_booking(callback: CallbackQuery, bot: Bot, state: FSMContext):
+    await callback.answer()
 
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+    repo: BookingRepository = callback.bot["repo"]
+    settings: Settings = callback.bot["settings"]
 
-from app.services.subscription import is_subscribed
-from app.handlers.ui import show_main_menu
+    if repo.has_active_booking(callback.from_user.id):
+        b = repo.get_active_booking(callback.from_user.id)
 
-router = Router()
-
-
-def get_sub_keyboard(channel_link: str):
-    kb = InlineKeyboardBuilder()
-
-    kb.button(text="📢 Подписаться", url=channel_link)
-    kb.button(text="✅ Проверить", callback_data="check_sub")
-
-    kb.adjust(1)
-    return kb.as_markup()
-
-
-@router.message(CommandStart())
-async def start_handler(message: Message, settings):
-    user_id = message.from_user.id
-
-    if not await is_subscribed(
-        bot=message.bot,
-        channel_id=settings.channel_id,
-        user_id=user_id,
-    ):
-        await message.answer(
-            "❌ Подпишись на канал, чтобы пользоваться ботом",
-            reply_markup=get_sub_keyboard(settings.channel_link),
+        await callback.message.edit_text(
+            f"📌 У тебя уже есть запись:\n\n{b['date']} {b['time']}",
+            reply_markup=back_to_menu_kb(),
         )
         return
 
-    # если подписан
-    await show_main_menu(message)
+    subscribed = await is_subscribed(
+        bot,
+        settings.channel_id,
+        callback.from_user.id,
+    )
+
+    if not subscribed:
+        await callback.message.edit_text(
+            "❗ Подпишись для записи",
+            reply_markup=subscription_kb(settings.channel_link),
+        )
+        return
