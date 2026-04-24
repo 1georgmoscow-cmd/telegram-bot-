@@ -2,13 +2,9 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
 
 
-async def is_subscribed(
-    bot: Bot,
-    channel_id: int,
-    user_id: int,
-) -> bool:
+async def is_subscribed(bot: Bot, channel_id: int, user_id: int) -> bool:
     """
-    Проверка подписки пользователя на канал
+    Проверка подписки пользователя
     """
 
     try:
