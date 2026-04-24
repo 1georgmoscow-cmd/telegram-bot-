@@ -15,6 +15,9 @@ from app.states.admin import AdminStates
 router = Router()
 
 
+# =========================
+# HELPERS
+# =========================
 def _is_admin(user_id: int, settings: Settings) -> bool:
     return user_id == settings.admin_id
 
@@ -45,7 +48,7 @@ async def admin_panel(callback: CallbackQuery, settings: Settings, state: FSMCon
 
 
 # =========================
-# ADD WORK DAY
+# ADD WORK DAY (через repo)
 # =========================
 @router.callback_query(F.data == "admin_add_day")
 async def admin_add_day_start(callback: CallbackQuery, settings: Settings, state: FSMContext):
@@ -56,7 +59,7 @@ async def admin_add_day_start(callback: CallbackQuery, settings: Settings, state
     await state.set_state(AdminStates.waiting_add_day)
 
     await callback.message.edit_text(
-        "Введи дату: YYYY-MM-DD",
+        "Введи дату рабочего дня: YYYY-MM-DD",
         reply_markup=back_to_menu_kb(),
     )
 
@@ -69,10 +72,11 @@ async def admin_add_day_save(message: Message, repo: BookingRepository, state: F
         await message.answer("Неверный формат даты")
         return
 
+    # ⚠️ предполагается что метод есть в repo
     repo.add_work_day(day)
 
     await state.clear()
-    await message.answer("День добавлен", reply_markup=admin_menu_kb())
+    await message.answer("Рабочий день добавлен", reply_markup=admin_menu_kb())
 
 
 # =========================
@@ -106,6 +110,7 @@ async def admin_add_slot_get_date(message: Message, state: FSMContext):
 @router.message(AdminStates.waiting_add_slot_time)
 async def admin_add_slot_save(message: Message, repo: BookingRepository, state: FSMContext):
     data = await state.get_data()
+
     slot_date = data["slot_date"]
     slot_time = message.text.strip()
 
@@ -140,7 +145,7 @@ async def admin_delete_slot_date(message: Message, repo: BookingRepository, stat
     slots = repo.get_free_slots(date_str)
 
     if not slots:
-        await message.answer("Слотов нет", reply_markup=admin_menu_kb())
+        await message.answer("Нет слотов", reply_markup=admin_menu_kb())
         await state.clear()
         return
 
@@ -162,14 +167,19 @@ async def admin_delete_slot_pick(callback: CallbackQuery, repo: BookingRepositor
 
     repo.delete_slot(date_str, time_str)
 
-    await callback.message.edit_text("Слот удален", reply_markup=admin_menu_kb())
+    await callback.message.edit_text("Слот удалён", reply_markup=admin_menu_kb())
 
 
 # =========================
 # VIEW SCHEDULE
 # =========================
 @router.callback_query(F.data == "admin_view_schedule")
-async def admin_view_schedule_start(callback: CallbackQuery, settings: Settings, state: FSMContext, repo: BookingRepository):
+async def admin_view_schedule_start(
+    callback: CallbackQuery,
+    settings: Settings,
+    state: FSMContext,
+    repo: BookingRepository,
+):
     if not _is_admin(callback.from_user.id, settings):
         await callback.answer("Нет доступа", show_alert=True)
         return
@@ -191,7 +201,11 @@ async def admin_view_schedule_start(callback: CallbackQuery, settings: Settings,
 
 
 @router.callback_query(AdminStates.waiting_view_schedule, F.data.startswith("pick_date:"))
-async def admin_view_schedule_pick(callback: CallbackQuery, repo: BookingRepository, state: FSMContext):
+async def admin_view_schedule_pick(
+    callback: CallbackQuery,
+    repo: BookingRepository,
+    state: FSMContext,
+):
     date_str = callback.data.split(":")[1]
 
     schedule = repo.get_schedule_by_date(date_str)
@@ -210,7 +224,6 @@ async def admin_view_schedule_pick(callback: CallbackQuery, repo: BookingReposit
             lines.append(f"{row['time']} — свободно")
 
     await callback.message.edit_text("\n".join(lines), reply_markup=admin_menu_kb())
-
     await state.clear()
 
 
@@ -241,7 +254,10 @@ async def admin_cancel_booking_date(message: Message, repo: BookingRepository, s
 
     await state.clear()
 
-    prepared = [{"id": b["id"], "name": b["name"], "time": b["time"]} for b in bookings]
+    prepared = [
+        {"id": b["id"], "name": b["name"], "time": b["time"]}
+        for b in bookings
+    ]
 
     await message.answer(
         "Выбери запись:",
