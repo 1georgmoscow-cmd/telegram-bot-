@@ -7,7 +7,7 @@ class Database:
         self.conn.row_factory = sqlite3.Row
 
     # =========================
-    # CORE EXECUTE
+    # CORE
     # =========================
     def execute(self, query: str, params: tuple = ()):
         cur = self.conn.cursor()
@@ -29,10 +29,12 @@ class Database:
     # INIT DB
     # =========================
     def init(self):
-        self.execute("""
+        # bookings
+        self.execute(
+            """
             CREATE TABLE IF NOT EXISTS bookings (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
+                user_id INTEGER,
                 name TEXT,
                 phone TEXT,
                 date TEXT,
@@ -40,16 +42,22 @@ class Database:
                 active INTEGER DEFAULT 1,
                 reminder_job_id TEXT
             )
-        """)
+            """
+        )
 
-        self.execute("""
+        # work days (админ добавляет рабочие дни)
+        self.execute(
+            """
             CREATE TABLE IF NOT EXISTS work_days (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 date TEXT UNIQUE
             )
-        """)
+            """
+        )
 
-        self.execute("""
+        # slots (админ управление временем)
+        self.execute(
+            """
             CREATE TABLE IF NOT EXISTS slots (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 date TEXT,
@@ -57,4 +65,5 @@ class Database:
                 active INTEGER DEFAULT 1,
                 UNIQUE(date, time)
             )
-        """)
+            """
+        )
