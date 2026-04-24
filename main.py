@@ -32,7 +32,7 @@ async def main():
     settings = load_settings()
 
     # =====================
-    # DB + REPO
+    # DB
     # =====================
     db = Database(settings.database_path)
     repo = BookingRepository(db)
@@ -57,7 +57,6 @@ async def main():
         booking_repo=repo,
     )
 
-    # 🔥 восстановление задач
     reminder_service.restore()
 
     # =====================
@@ -65,33 +64,37 @@ async def main():
     # =====================
     dp = Dispatcher()
 
-    # прокидываем зависимости в handlers через workflow_data
+    # 🔥 ЕДИНСТВЕННЫЙ ПРАВИЛЬНЫЙ СПОСОБ DI
     dp["repo"] = repo
-    dp["reminder_service"] = reminder_service
     dp["settings"] = settings
+    dp["reminder_service"] = reminder_service
+    dp["bot"] = bot
 
     # =====================
     # ROUTERS
     # =====================
     dp.include_router(start.router)
     dp.include_router(subscription.router)
-
     dp.include_router(booking.router)
     dp.include_router(menu_handlers.router)
-
     dp.include_router(misc.router)
     dp.include_router(admin.router)
 
     # =====================
-    # START BOT
+    # START
     # =====================
-    await dp.start_polling(
-        bot,
-        settings=settings,
-        repo=repo,
-        reminder_service=reminder_service,
-    )
+    try:
+        await dp.start_polling(bot)
+    finally:
+        await bot.session.close()
+
+
+# =====================
+# ENTRYPOINT (RAILWAY SAFE)
+# =====================
+def run():
+    asyncio.run(main())
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    run()
