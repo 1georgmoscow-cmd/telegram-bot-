@@ -28,7 +28,16 @@ SERVICES = {
 
 
 # =========================
-# START
+# DEBUG (ловит ВСЕ callback’и)
+# =========================
+@router.callback_query()
+async def debug_all_callbacks(callback: CallbackQuery):
+    print("🔥 CALLBACK RECEIVED:", callback.data)
+    await callback.answer()
+
+
+# =========================
+# START BOOKING
 # =========================
 @router.callback_query(StateFilter(None), F.data.in_(["start_booking", "book"]))
 async def start_booking(
@@ -48,7 +57,6 @@ async def start_booking(
         )
         return
 
-    # ✅ ИСПРАВЛЕНО: используем is_subscribed
     subscribed = await is_subscribed(
         bot=bot,
         channel_id=settings.channel_id,
@@ -74,7 +82,7 @@ async def start_booking(
 
 
 # =========================
-# SERVICE
+# SERVICE SELECT
 # =========================
 @router.callback_query(F.data.startswith("service:"))
 async def choose_service(
@@ -101,7 +109,7 @@ async def choose_service(
 
 
 # =========================
-# PICK DATE
+# DATE PICK
 # =========================
 @router.callback_query(F.data.startswith("pick_date:"))
 async def pick_date(
@@ -127,7 +135,7 @@ async def pick_date(
 
 
 # =========================
-# PICK TIME
+# TIME PICK
 # =========================
 @router.callback_query(F.data.startswith("pick_time:"))
 async def pick_time(callback: CallbackQuery, state: FSMContext):
