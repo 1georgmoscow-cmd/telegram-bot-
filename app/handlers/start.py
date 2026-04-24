@@ -1,5 +1,4 @@
 from aiogram import Router, Bot, F
-from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -17,18 +16,25 @@ SERVICES = {
 }
 
 
-# =========================
-# START BOOKING
-# =========================
 @router.callback_query(StateFilter(None), F.data.in_(["start_booking", "book"]))
 async def start_booking(callback: CallbackQuery, bot: Bot):
     await callback.answer()
 
-    repo: BookingRepository = callback.bot["repo"]
-    settings: Settings = callback.bot["settings"]
+    # ⚠️ Достаём из bot правильно (но безопасно)
+    repo: BookingRepository = getattr(bot, "repo", None)
+    settings: Settings = getattr(bot, "settings", None)
 
-    if repo.has_active_booking(callback.from_user.id):
-        b = repo.get_active_booking(callback.from_user.id)
+    if repo is None or settings is None:
+        await callback.message.edit_text(
+            "⚠️ Ошибка конфигурации бота"
+        )
+        return
+
+    user_id = callback.from_user.id
+
+    # проверка активной записи
+    if repo.has_active_booking(user_id):
+        b = repo.get_active_booking(user_id)
 
         await callback.message.edit_text(
             f"📌 У тебя уже есть запись:\n\n{b['date']} {b['time']}",
@@ -36,10 +42,11 @@ async def start_booking(callback: CallbackQuery, bot: Bot):
         )
         return
 
+    # проверка подписки
     subscribed = await is_subscribed(
         bot,
         settings.channel_id,
-        callback.from_user.id,
+        user_id,
     )
 
     if not subscribed:
