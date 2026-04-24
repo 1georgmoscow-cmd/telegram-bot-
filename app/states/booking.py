@@ -24,6 +24,6 @@ class BookingStates(StatesGroup):
     waiting_for_phone = State()
 
     # =========================
-    # подтверждение
+    # подтверждение записи
     # =========================
     confirmation = State()
