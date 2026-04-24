@@ -8,23 +8,28 @@ class Database:
     def __init__(self, db_path: str):
         self.db_path = db_path
 
+    # =========================
+    # 🔌 CONNECT
+    # =========================
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         return conn
 
     # =========================
-    # 🧱 INIT (CRM FIXED)
+    # 🧱 INIT CRM STRUCTURE
     # =========================
     def init(self) -> None:
         with closing(self._connect()) as conn:
             conn.executescript(
                 """
+                -- 📅 рабочие дни
                 CREATE TABLE IF NOT EXISTS work_days (
                     date TEXT PRIMARY KEY,
                     is_closed INTEGER NOT NULL DEFAULT 0
                 );
 
+                -- ⏰ слоты мастера (источник истины)
                 CREATE TABLE IF NOT EXISTS time_slots (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     date TEXT NOT NULL,
@@ -33,7 +38,7 @@ class Database:
                     UNIQUE(date, time)
                 );
 
-                -- 🔥 FIX: УБРАЛ UNIQUE(user_id)
+                -- 📌 бронирования
                 CREATE TABLE IF NOT EXISTS bookings (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
@@ -76,46 +81,6 @@ class Database:
             )
             conn.commit()
 
-    # =========================
-    # ⏰ SLOTS
-    # =========================
-    def add_slot(self, date: str, time: str) -> None:
-        with closing(self._connect()) as conn:
-            conn.execute(
-                """
-                INSERT INTO work_days(date, is_closed)
-                VALUES(?, 0)
-                ON CONFLICT(date) DO NOTHING
-                """,
-                (date,),
-            )
-
-            conn.execute(
-                """
-                INSERT INTO time_slots(date, time, is_active)
-                VALUES(?, ?, 1)
-                ON CONFLICT(date, time) DO UPDATE SET is_active = 1
-                """,
-                (date, time),
-            )
-            conn.commit()
-
-    def delete_slot(self, date: str, time: str) -> int:
-        with closing(self._connect()) as conn:
-            cursor = conn.execute(
-                """
-                UPDATE time_slots
-                SET is_active = 0
-                WHERE date = ? AND time = ?
-                """,
-                (date, time),
-            )
-            conn.commit()
-            return cursor.rowcount
-
-    # =========================
-    # 📊 CALENDAR
-    # =========================
     def get_month_work_days(self, start_date: str, end_date: str) -> list[str]:
         with closing(self._connect()) as conn:
             rows = conn.execute(
@@ -129,10 +94,53 @@ class Database:
                 (start_date, end_date),
             ).fetchall()
 
-        return [row["date"] for row in rows]
+        return [r["date"] for r in rows]
 
     # =========================
-    # 🔥 CRM SLOT SYSTEM
+    # ⏰ MASTER SLOTS (CRM CORE)
+    # =========================
+
+    def add_slot(self, date: str, time: str) -> None:
+        with closing(self._connect()) as conn:
+            conn.execute(
+                """
+                INSERT INTO time_slots(date, time, is_active)
+                VALUES(?, ?, 1)
+                ON CONFLICT(date, time) DO UPDATE SET is_active = 1
+                """,
+                (date, time),
+            )
+            conn.commit()
+
+    def delete_slot(self, date: str, time: str) -> None:
+        with closing(self._connect()) as conn:
+            conn.execute(
+                """
+                UPDATE time_slots
+                SET is_active = 0
+                WHERE date = ? AND time = ?
+                """,
+                (date, time),
+            )
+            conn.commit()
+
+    def get_master_slots(self, date: str) -> list[str]:
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                """
+                SELECT time
+                FROM time_slots
+                WHERE date = ?
+                  AND is_active = 1
+                ORDER BY time ASC
+                """,
+                (date,),
+            ).fetchall()
+
+        return [r["time"] for r in rows]
+
+    # =========================
+    # 🔥 BOOKED SLOTS
     # =========================
     def get_booked_times(self, date: str) -> list[str]:
         with closing(self._connect()) as conn:
@@ -140,38 +148,25 @@ class Database:
                 """
                 SELECT time
                 FROM bookings
-                WHERE date = ? AND status = 'active'
+                WHERE date = ?
+                  AND status = 'active'
                 """,
                 (date,),
             ).fetchall()
 
-        return [row["time"] for row in rows]
-
-    def get_free_slots(self, date: str) -> list[str]:
-        all_slots = [
-            "10:00", "11:00", "12:00", "13:00",
-            "14:00", "15:00", "16:00", "17:00", "18:00"
-        ]
-
-        booked = set(self.get_booked_times(date))
-        return [s for s in all_slots if s not in booked]
-
-    def is_slot_free(self, date: str, time: str) -> bool:
-        with closing(self._connect()) as conn:
-            row = conn.execute(
-                """
-                SELECT 1
-                FROM bookings
-                WHERE date=? AND time=? AND status='active'
-                LIMIT 1
-                """,
-                (date, time),
-            ).fetchone()
-
-        return row is None
+        return [r["time"] for r in rows]
 
     # =========================
-    # ➕ CREATE BOOKING (CRM PRO)
+    # 💎 AVAILABLE SLOTS (MAIN CRM LOGIC)
+    # =========================
+    def get_available_slots(self, date: str) -> list[str]:
+        master = self.get_master_slots(date)
+        booked = set(self.get_booked_times(date))
+
+        return [t for t in master if t not in booked]
+
+    # =========================
+    # 🧾 CREATE BOOKING (SAFE CRM LOCK)
     # =========================
     def create_booking(
         self,
@@ -185,26 +180,30 @@ class Database:
 
         with closing(self._connect()) as conn:
 
-            # 🔥 SLOT LOCK CHECK
-            slot_busy = conn.execute(
+            # 🔒 LOCK CHECK
+            existing = conn.execute(
                 """
                 SELECT 1
                 FROM bookings
-                WHERE date=? AND time=? AND status='active'
+                WHERE date = ?
+                  AND time = ?
+                  AND status = 'active'
                 LIMIT 1
                 """,
                 (date, time),
             ).fetchone()
 
-            if slot_busy:
+            if existing:
                 return None
 
             cursor = conn.execute(
                 """
-                INSERT INTO bookings(
+                INSERT INTO bookings (
                     user_id, name, phone,
-                    date, time, status,
-                    reminder_job_id, created_at
+                    date, time,
+                    status,
+                    reminder_job_id,
+                    created_at
                 )
                 VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
                 """,
@@ -223,39 +222,27 @@ class Database:
             return cursor.lastrowid
 
     # =========================
-    # 🔔 REMINDER LINK
-    # =========================
-    def set_reminder_job_id(self, booking_id: int, job_id: str | None) -> None:
-        with closing(self._connect()) as conn:
-            conn.execute(
-                "UPDATE bookings SET reminder_job_id=? WHERE id=?",
-                (job_id, booking_id),
-            )
-            conn.commit()
-
-    # =========================
     # 👤 USER BOOKING
     # =========================
     def get_active_booking(self, user_id: int):
         with closing(self._connect()) as conn:
-            row = conn.execute(
+            return conn.execute(
                 """
                 SELECT *
                 FROM bookings
-                WHERE user_id=? AND status='active'
+                WHERE user_id = ?
+                  AND status = 'active'
                 ORDER BY id DESC
                 LIMIT 1
                 """,
                 (user_id,),
             ).fetchone()
 
-        return row
-
     def has_active_booking(self, user_id: int) -> bool:
         return self.get_active_booking(user_id) is not None
 
     # =========================
-    # ❌ CANCEL
+    # ❌ CANCEL BOOKING
     # =========================
     def cancel_booking_by_user(self, user_id: int):
         with closing(self._connect()) as conn:
@@ -263,20 +250,22 @@ class Database:
                 """
                 SELECT *
                 FROM bookings
-                WHERE user_id=? AND status='active'
+                WHERE user_id = ?
+                  AND status = 'active'
                 LIMIT 1
                 """,
                 (user_id,),
             ).fetchone()
 
-            if booking is None:
+            if not booking:
                 return None
 
             conn.execute(
                 """
                 UPDATE bookings
-                SET status='cancelled', reminder_job_id=NULL
-                WHERE id=?
+                SET status = 'cancelled',
+                    reminder_job_id = NULL
+                WHERE id = ?
                 """,
                 (booking["id"],),
             )
@@ -290,20 +279,22 @@ class Database:
                 """
                 SELECT *
                 FROM bookings
-                WHERE id=? AND status='active'
+                WHERE id = ?
+                  AND status = 'active'
                 LIMIT 1
                 """,
                 (booking_id,),
             ).fetchone()
 
-            if booking is None:
+            if not booking:
                 return None
 
             conn.execute(
                 """
                 UPDATE bookings
-                SET status='cancelled', reminder_job_id=NULL
-                WHERE id=?
+                SET status = 'cancelled',
+                    reminder_job_id = NULL
+                WHERE id = ?
                 """,
                 (booking_id,),
             )
@@ -312,7 +303,7 @@ class Database:
             return booking
 
     # =========================
-    # 📊 ADMIN
+    # 📊 ADMIN CRM VIEW
     # =========================
     def get_schedule_by_date(self, date: str) -> list[dict[str, Any]]:
         with closing(self._connect()) as conn:
@@ -329,7 +320,8 @@ class Database:
                   ON b.date = s.date
                  AND b.time = s.time
                  AND b.status = 'active'
-                WHERE s.date = ? AND s.is_active = 1
+                WHERE s.date = ?
+                  AND s.is_active = 1
                 ORDER BY s.time ASC
                 """,
                 (date,),
@@ -337,25 +329,16 @@ class Database:
 
         return [dict(r) for r in rows]
 
-    def get_bookings_for_date(self, date: str) -> list[sqlite3.Row]:
+    # =========================
+    # 🔁 RESTORE SYSTEM
+    # =========================
+    def get_active_bookings_for_restore(self):
         with closing(self._connect()) as conn:
             return conn.execute(
                 """
                 SELECT *
                 FROM bookings
-                WHERE date=? AND status='active'
-                ORDER BY time ASC
-                """,
-                (date,),
-            ).fetchall()
-
-    def get_active_bookings_for_restore(self) -> list[sqlite3.Row]:
-        with closing(self._connect()) as conn:
-            return conn.execute(
-                """
-                SELECT *
-                FROM bookings
-                WHERE status='active'
+                WHERE status = 'active'
                 ORDER BY date ASC, time ASC
                 """
             ).fetchall()
