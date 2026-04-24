@@ -24,14 +24,11 @@ from app.services.scheduler import ReminderService
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
 
-    # ⚙️ настройки
     settings = load_settings()
 
-    # 🗄 база данных
     db = Database(settings.database_path)
     db.init()
 
-    # 🤖 бот
     bot = Bot(
         token=settings.bot_token,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
@@ -39,7 +36,6 @@ async def main() -> None:
 
     dp = Dispatcher()
 
-    # ⏰ scheduler
     scheduler = AsyncIOScheduler(timezone=settings.timezone)
     scheduler.start()
 
@@ -51,15 +47,17 @@ async def main() -> None:
 
     reminder_service.restore_jobs_from_db()
 
-    # 🧩 handlers
+    # 🔥 ВАЖНО: booking ПЕРВЫЙ
     dp.include_router(start.router)
     dp.include_router(subscription.router)
-    dp.include_router(menu_handlers.router)
-    dp.include_router(booking.router)
+
+    dp.include_router(booking.router)        # 👈 сюда должен попадать start_booking
+
+    dp.include_router(menu_handlers.router)   # 👈 UI кнопки (prices, portfolio)
+
     dp.include_router(misc.router)
     dp.include_router(admin.router)
 
-    # 🚀 запуск
     await dp.start_polling(
         bot,
         settings=settings,
