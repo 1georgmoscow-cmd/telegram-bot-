@@ -6,14 +6,13 @@ class BookingRepository:
         self.db = db
 
     # =========================
-    # CREATE
+    # BOOKING CORE
     # =========================
-    def create_booking(self, user_id: int, name: str, phone: str, date: str, time: str):
+    def create_booking(self, user_id, name, phone, date, time):
         exists = self.db.fetchone(
             "SELECT id FROM bookings WHERE date=? AND time=? AND active=1",
             (date, time),
         )
-
         if exists:
             return None
 
@@ -26,68 +25,102 @@ class BookingRepository:
         )
         return cur.lastrowid
 
-    # =========================
-    # ACTIVE CHECK
-    # =========================
-    def has_active_booking(self, user_id: int) -> bool:
+    def has_active_booking(self, user_id):
         row = self.db.fetchone(
             "SELECT id FROM bookings WHERE user_id=? AND active=1",
             (user_id,),
         )
-        return row is not None
+        return bool(row)
 
-    def get_active_booking(self, user_id: int):
+    def get_active_booking(self, user_id):
         return self.db.fetchone(
             "SELECT * FROM bookings WHERE user_id=? AND active=1",
             (user_id,),
         )
 
     # =========================
-    # SLOTS (RAW DATA ONLY)
+    # SLOTS (CLIENT SIDE)
     # =========================
-    def get_busy_slots(self, date: str):
+    def get_busy_slots(self, date):
         rows = self.db.fetchall(
             "SELECT time FROM bookings WHERE date=? AND active=1",
             (date,),
         )
-        return rows
+        return [row["time"] for row in rows]
 
-    def get_bookings_for_date(self, date: str):
-        return self.db.fetchall(
-            "SELECT * FROM bookings WHERE date=? AND active=1",
+    def get_free_slots(self, date):
+        all_slots = [
+            "10:00", "11:00", "12:00",
+            "13:00", "14:00", "15:00",
+            "16:00", "17:00", "18:00",
+        ]
+
+        busy = self.get_busy_slots(date)
+        return [slot for slot in all_slots if slot not in busy]
+
+    # =========================
+    # ADMIN: WORK DAYS
+    # =========================
+    def add_work_day(self, day: str):
+        self.db.execute(
+            "INSERT OR IGNORE INTO work_days (date) VALUES (?)",
+            (day,),
+        )
+
+    def get_work_days(self):
+        rows = self.db.fetchall("SELECT date FROM work_days ORDER BY date")
+        return [r["date"] for r in rows]
+
+    # =========================
+    # ADMIN: SLOTS
+    # =========================
+    def add_slot(self, date: str, time: str):
+        self.db.execute(
+            "INSERT OR IGNORE INTO slots (date, time, active) VALUES (?, ?, 1)",
+            (date, time),
+        )
+
+    def delete_slot(self, date: str, time: str):
+        cur = self.db.execute(
+            "DELETE FROM slots WHERE date=? AND time=?",
+            (date, time),
+        )
+        return cur.rowcount > 0
+
+    def get_slots_for_date(self, date: str):
+        rows = self.db.fetchall(
+            "SELECT time FROM slots WHERE date=? AND active=1",
             (date,),
         )
+        return [r["time"] for r in rows]
 
     # =========================
-    # WORK DAYS
-    # =========================
-    def get_month_work_days(self, start_date: str, end_date: str):
-        rows = self.db.fetchall(
-            """
-            SELECT DISTINCT date
-            FROM bookings
-            WHERE date BETWEEN ? AND ?
-            """,
-            (start_date, end_date),
-        )
-        return rows
-
-    # =========================
-    # SCHEDULE VIEW
+    # ADMIN: SCHEDULE VIEW
     # =========================
     def get_schedule_by_date(self, date: str):
         return self.db.fetchall(
             """
-            SELECT id as booking_id, name, phone, date, time
-            FROM bookings
-            WHERE date=?
-            ORDER BY time
+            SELECT s.time,
+                   b.id as booking_id,
+                   b.name,
+                   b.phone
+            FROM slots s
+            LEFT JOIN bookings b
+                ON b.date = s.date AND b.time = s.time AND b.active = 1
+            WHERE s.date=?
+            ORDER BY s.time
             """,
             (date,),
         )
 
+    def get_bookings_for_date(self, date: str):
+        return self.db.fetchall(
+            "SELECT * FROM bookings WHERE date=? AND active=1 ORDER BY time",
+            (date,),
+        )
+
     # =========================
-    # DELETE / CANCEL
+    # CANCEL BOOKING
     # =========================
     def cancel_booking_by_id(self, booking_id: int):
         booking = self.db.fetchone(
@@ -106,9 +139,14 @@ class BookingRepository:
         return booking
 
     # =========================
-    # REMINDER
+    # SCHEDULER SUPPORT
     # =========================
-    def set_reminder_job_id(self, booking_id: int, job_id: str | None):
+    def get_active_bookings_for_restore(self):
+        return self.db.fetchall(
+            "SELECT * FROM bookings WHERE active=1"
+        )
+
+    def set_reminder_job_id(self, booking_id, job_id):
         self.db.execute(
             "UPDATE bookings SET reminder_job_id=? WHERE id=?",
             (job_id, booking_id),
