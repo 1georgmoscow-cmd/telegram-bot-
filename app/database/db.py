@@ -1,24 +1,20 @@
 import sqlite3
 from typing import Optional, List, Dict
-from datetime import date
+from pathlib import Path
 
 
 class Database:
-    def __init__(self, path: str = "database.db"):
-        self.conn = sqlite3.connect(path, check_same_thread=False)
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
-        self.create_tables()
+        self.cursor = self.conn.cursor()
 
     # =========================
-    # INIT (ВАЖНО для твоей ошибки)
+    # INIT DATABASE
     # =========================
     def init(self):
-        self.create_tables()
-
-    def create_tables(self):
-        cursor = self.conn.cursor()
-
-        cursor.execute("""
+        self.cursor.execute("""
         CREATE TABLE IF NOT EXISTS bookings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
@@ -26,105 +22,94 @@ class Database:
             phone TEXT,
             date TEXT,
             time TEXT,
-            status TEXT DEFAULT 'active',
+            is_active INTEGER DEFAULT 1,
             reminder_job_id TEXT
         )
         """)
-
         self.conn.commit()
 
     # =========================
-    # BOOKING CREATE
+    # CREATE BOOKING
     # =========================
-    def create_booking(self, user_id: int, name: str, phone: str, date_: str, time_: str):
-        cursor = self.conn.cursor()
-
-        # проверка на занятый слот
-        cursor.execute(
-            "SELECT id FROM bookings WHERE date=? AND time=? AND status='active'",
-            (date_, time_)
+    def create_booking(self, user_id: int, name: str, phone: str, date: str, time: str) -> Optional[int]:
+        # проверка занятости слота
+        self.cursor.execute(
+            "SELECT id FROM bookings WHERE date=? AND time=? AND is_active=1",
+            (date, time)
         )
-        if cursor.fetchone():
+        if self.cursor.fetchone():
             return None
 
-        cursor.execute("""
+        self.cursor.execute(
+            """
             INSERT INTO bookings (user_id, name, phone, date, time)
             VALUES (?, ?, ?, ?, ?)
-        """, (user_id, name, phone, date_, time_))
-
+            """,
+            (user_id, name, phone, date, time)
+        )
         self.conn.commit()
-        return cursor.lastrowid
+        return self.cursor.lastrowid
 
     # =========================
     # ACTIVE BOOKING USER
     # =========================
     def has_active_booking(self, user_id: int) -> bool:
-        cursor = self.conn.cursor()
-        cursor.execute(
-            "SELECT id FROM bookings WHERE user_id=? AND status='active' LIMIT 1",
+        self.cursor.execute(
+            "SELECT id FROM bookings WHERE user_id=? AND is_active=1",
             (user_id,)
         )
-        return cursor.fetchone() is not None
+        return self.cursor.fetchone() is not None
 
     def get_active_booking(self, user_id: int) -> Optional[Dict]:
-        cursor = self.conn.cursor()
-        cursor.execute(
-            "SELECT * FROM bookings WHERE user_id=? AND status='active' LIMIT 1",
+        self.cursor.execute(
+            "SELECT * FROM bookings WHERE user_id=? AND is_active=1 ORDER BY id DESC LIMIT 1",
             (user_id,)
         )
-        row = cursor.fetchone()
+        row = self.cursor.fetchone()
         return dict(row) if row else None
 
     # =========================
     # SLOTS
     # =========================
-    def get_available_slots(self, date_: str) -> List[str]:
+    def get_available_slots(self, date_str: str) -> List[str]:
         all_slots = [
-            "10:00", "11:00", "12:00",
-            "13:00", "14:00", "15:00",
-            "16:00", "17:00", "18:00"
+            "10:00", "11:00", "12:00", "13:00",
+            "14:00", "15:00", "16:00", "17:00", "18:00"
         ]
 
-        cursor = self.conn.cursor()
-        cursor.execute(
-            "SELECT time FROM bookings WHERE date=? AND status='active'",
-            (date_,)
+        self.cursor.execute(
+            "SELECT time FROM bookings WHERE date=? AND is_active=1",
+            (date_str,)
         )
+        taken = {row["time"] for row in self.cursor.fetchall()}
 
-        booked = {row["time"] for row in cursor.fetchall()}
-
-        return [t for t in all_slots if t not in booked]
-
-    # =========================
-    # CALENDAR WORK DAYS (упрощённо)
-    # =========================
-    def get_month_work_days(self, start_date: str, end_date: str) -> List[str]:
-        cursor = self.conn.cursor()
-        cursor.execute("""
-            SELECT DISTINCT date FROM bookings
-            WHERE date BETWEEN ? AND ?
-        """, (start_date, end_date))
-
-        rows = cursor.fetchall()
-        return [r["date"] for r in rows]
+        return [t for t in all_slots if t not in taken]
 
     # =========================
-    # REMINDER RESTORE
+    # WORK DAYS (упрощённо)
     # =========================
-    def get_active_bookings_for_restore(self) -> List[Dict]:
-        cursor = self.conn.cursor()
-        cursor.execute("""
-            SELECT * FROM bookings
-            WHERE status='active'
-        """)
-        return [dict(row) for row in cursor.fetchall()]
+    def get_month_work_days(self, start_date: str, end_date: str):
+        # пока просто возвращаем все дни (можешь потом усложнить)
+        self.cursor.execute(
+            "SELECT DISTINCT date FROM bookings"
+        )
+        return [row["date"] for row in self.cursor.fetchall()]
 
+    # =========================
+    # REMINDER SUPPORT
+    # =========================
     def set_reminder_job_id(self, booking_id: int, job_id: Optional[str]):
-        cursor = self.conn.cursor()
-        cursor.execute("""
-            UPDATE bookings
-            SET reminder_job_id=?
-            WHERE id=?
-        """, (job_id, booking_id))
-
+        self.cursor.execute(
+            "UPDATE bookings SET reminder_job_id=? WHERE id=?",
+            (job_id, booking_id)
+        )
         self.conn.commit()
+
+    def get_active_bookings_for_restore(self):
+        self.cursor.execute(
+            """
+            SELECT * FROM bookings
+            WHERE is_active=1
+            """
+        )
+        return [dict(row) for row in self.cursor.fetchall()]
