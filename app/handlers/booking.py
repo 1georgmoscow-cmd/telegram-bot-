@@ -36,7 +36,10 @@ def get_range():
 # =========================
 async def safe_edit(callback: CallbackQuery, text: str, kb=None):
     try:
-        await callback.message.edit_text(text, reply_markup=kb)
+        if callback.message.text != text:
+            await callback.message.edit_text(text, reply_markup=kb)
+        else:
+            await callback.answer()
     except:
         await callback.message.answer(text, reply_markup=kb)
 
@@ -146,7 +149,7 @@ async def pick_date(callback: CallbackQuery, db: Database, state: FSMContext):
 
     date_str = callback.data.split(":", 1)[1]
 
-    slots = db.get_free_slots(date_str)
+    slots = db.get_free_slots(date_str) or []
 
     if not slots:
         await callback.answer("Нет слотов", show_alert=True)
@@ -173,7 +176,7 @@ async def pick_time(callback: CallbackQuery, state: FSMContext):
     await state.update_data(date=date_str, time=time_str)
     await state.set_state(BookingStates.waiting_for_name)
 
-    await callback.message.edit_text("✍️ Введи имя:")
+    await safe_edit(callback, "✍️ Введи имя:")
 
 
 # =========================
@@ -215,6 +218,10 @@ async def confirm(callback: CallbackQuery, state: FSMContext, db: Database):
 
     data = await state.get_data()
 
+    if not data.get("date") or not data.get("time"):
+        await callback.answer("Ошибка данных", show_alert=True)
+        return
+    
     booking_id = db.create_booking(
         callback.from_user.id,
         data["name"],
