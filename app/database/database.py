@@ -7,7 +7,7 @@ class Database:
         self.conn.row_factory = sqlite3.Row
 
     # =========================
-    # CORE
+    # EXECUTE
     # =========================
     def execute(self, query: str, params: tuple = ()):
         cur = self.conn.cursor()
@@ -15,55 +15,54 @@ class Database:
         self.conn.commit()
         return cur
 
+    # =========================
+    # FETCH ONE
+    # =========================
     def fetchone(self, query: str, params: tuple = ()):
         cur = self.conn.cursor()
         cur.execute(query, params)
         return cur.fetchone()
 
+    # =========================
+    # FETCH ALL
+    # =========================
     def fetchall(self, query: str, params: tuple = ()):
         cur = self.conn.cursor()
         cur.execute(query, params)
         return cur.fetchall()
 
     # =========================
-    # INIT DB
+    # INIT TABLES (НОВАЯ СХЕМА)
     # =========================
     def init(self):
-        # bookings
-        self.execute(
-            """
+        # реальные записи клиентов
+        self.execute("""
             CREATE TABLE IF NOT EXISTS bookings (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                name TEXT,
-                phone TEXT,
-                date TEXT,
-                time TEXT,
+                user_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                phone TEXT NOT NULL,
+                date TEXT NOT NULL,
+                time TEXT NOT NULL,
                 active INTEGER DEFAULT 1,
                 reminder_job_id TEXT
             )
-            """
-        )
+        """)
 
-        # work days (админ добавляет рабочие дни)
-        self.execute(
-            """
+        # рабочие дни мастера
+        self.execute("""
             CREATE TABLE IF NOT EXISTS work_days (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                date TEXT UNIQUE
+                date TEXT UNIQUE NOT NULL
             )
-            """
-        )
+        """)
 
-        # slots (админ управление временем)
-        self.execute(
-            """
+        # слоты времени
+        self.execute("""
             CREATE TABLE IF NOT EXISTS slots (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                date TEXT,
-                time TEXT,
-                active INTEGER DEFAULT 1,
+                date TEXT NOT NULL,
+                time TEXT NOT NULL,
                 UNIQUE(date, time)
             )
-            """
-        )
+        """)
