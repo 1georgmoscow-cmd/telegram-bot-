@@ -3,8 +3,7 @@ from datetime import date, timedelta
 from aiogram import Bot, F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter
-from aiogram.types import CallbackQuery, Message
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import CallbackQuery, Message, InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.config import Settings
 from app.repositories.booking_repo import BookingRepository
@@ -15,7 +14,7 @@ from app.keyboards.calendar import (
     format_ru_date,
 )
 from app.keyboards.common import back_to_menu_kb, subscription_kb
-from app.services.subscription import is_subscribed
+from app.services.subscription import check_subscription
 from app.services.scheduler import ReminderService
 from app.states.booking import BookingStates
 
@@ -40,6 +39,7 @@ async def start_booking(
 ):
     await callback.answer()
 
+    # если уже есть активная запись
     if repo.has_active_booking(callback.from_user.id):
         b = repo.get_active_booking(callback.from_user.id)
 
@@ -49,15 +49,16 @@ async def start_booking(
         )
         return
 
-    subscribed = await is_subscribed(
-        bot,
-        settings.channel_id,
-        callback.from_user.id,
+    # 🔥 ПРОВЕРКА ПОДПИСКИ (ИСПРАВЛЕНО)
+    subscribed = await check_subscription(
+        bot=bot,
+        user_id=callback.from_user.id,
+        channel_id=settings.channel_id,
     )
 
     if not subscribed:
         await callback.message.edit_text(
-            "❗ Подпишись для записи",
+            "❗ Подпишись на канал, чтобы записаться",
             reply_markup=subscription_kb(settings.channel_link),
         )
         return
@@ -77,7 +78,11 @@ async def start_booking(
 # SERVICE
 # =========================
 @router.callback_query(F.data.startswith("service:"))
-async def choose_service(callback: CallbackQuery, state: FSMContext, repo: BookingRepository):
+async def choose_service(
+    callback: CallbackQuery,
+    state: FSMContext,
+    repo: BookingRepository,
+):
     await callback.answer()
 
     service = callback.data.split(":", 1)[1]
@@ -85,7 +90,11 @@ async def choose_service(callback: CallbackQuery, state: FSMContext, repo: Booki
 
     today = date.today()
 
-    days = repo.get_work_days()
+    # ⚠️ У ТЕБЯ НЕТ get_work_days → заменяем на безопасную логику
+    days = repo.get_month_work_days(
+        today.isoformat(),
+        (today + timedelta(days=90)).isoformat(),
+    )
 
     await callback.message.edit_text(
         "📅 Выбери дату:",
@@ -97,7 +106,11 @@ async def choose_service(callback: CallbackQuery, state: FSMContext, repo: Booki
 # PICK DATE
 # =========================
 @router.callback_query(F.data.startswith("pick_date:"))
-async def pick_date(callback: CallbackQuery, repo: BookingRepository, state: FSMContext):
+async def pick_date(
+    callback: CallbackQuery,
+    repo: BookingRepository,
+    state: FSMContext,
+):
     await callback.answer()
 
     date_str = callback.data.split(":", 1)[1]
@@ -105,7 +118,7 @@ async def pick_date(callback: CallbackQuery, repo: BookingRepository, state: FSM
     slots = repo.get_free_slots(date_str)
 
     if not slots:
-        await callback.answer("Нет слотов", show_alert=True)
+        await callback.answer("Нет доступных слотов", show_alert=True)
         return
 
     await state.update_data(date=date_str)
@@ -123,7 +136,10 @@ async def pick_date(callback: CallbackQuery, repo: BookingRepository, state: FSM
 async def pick_time(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
-    _, date_str, time_str = callback.data.split(":", 2)
+    try:
+        _, date_str, time_str = callback.data.split(":", 2)
+    except ValueError:
+        return
 
     await state.update_data(date=date_str, time=time_str)
     await state.set_state(BookingStates.waiting_for_name)
@@ -152,7 +168,7 @@ async def get_phone(message: Message, state: FSMContext):
     await state.update_data(phone=message.text)
 
     await message.answer(
-        "📌 Проверь:\n\n"
+        "📌 Проверь данные:\n\n"
         f"📅 {data.get('date')}\n"
         f"⏰ {data.get('time')}\n"
         f"👤 {data.get('name')}\n"
@@ -176,12 +192,21 @@ async def confirm(
 
     data = await state.get_data()
 
+    # защита от пустых данных
+    if not all([data.get("date"), data.get("time"), data.get("name"), data.get("phone")]):
+        await callback.message.edit_text(
+            "❌ Ошибка данных. Начни заново.",
+            reply_markup=back_to_menu_kb(),
+        )
+        await state.clear()
+        return
+
     booking_id = repo.create_booking(
         callback.from_user.id,
-        data.get("name"),
-        data.get("phone"),
-        data.get("date"),
-        data.get("time"),
+        data["name"],
+        data["phone"],
+        data["date"],
+        data["time"],
     )
 
     if not booking_id:
@@ -192,11 +217,12 @@ async def confirm(
         await state.clear()
         return
 
+    # 🔥 РЕМАЙНДЕР
     job_id = reminder_service.schedule_booking_reminder(
         booking_id=booking_id,
         user_id=callback.from_user.id,
-        date_str=data.get("date"),
-        time_str=data.get("time"),
+        date_str=data["date"],
+        time_str=data["time"],
     )
 
     repo.set_reminder_job_id(booking_id, job_id)
