@@ -18,21 +18,34 @@ class ReminderService:
         self.bot = bot
 
     # =========================
-    # SEND
+    # SEND REMINDER
     # =========================
     async def send_reminder(self, user_id: int, booking_time: str) -> None:
         await self.bot.send_message(
             user_id,
-            f"Напоминаем, что вы записаны на наращивание ресниц завтра в <b>{booking_time}</b>.\nЖдём вас ❤️",
+            (
+                "⏰ Напоминание!\n\n"
+                f"Вы записаны на наращивание ресниц завтра в <b>{booking_time}</b>.\n"
+                "Ждём вас ❤️"
+            ),
+            parse_mode="HTML",
         )
 
     # =========================
-    # CREATE JOB
+    # SCHEDULE JOB
     # =========================
     def schedule_booking_reminder(
-        self, booking_id: int, user_id: int, date_str: str, time_str: str
+        self,
+        booking_id: int,
+        user_id: int,
+        date_str: str,
+        time_str: str,
     ) -> str | None:
-        dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
+        try:
+            dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
+        except ValueError:
+            return None
+
         reminder_at = dt - timedelta(hours=24)
 
         if reminder_at <= datetime.now():
@@ -52,10 +65,13 @@ class ReminderService:
             replace_existing=True,
         )
 
+        # сохраняем job_id в БД
+        self.repo.set_reminder_job_id(booking_id, job_id)
+
         return job_id
 
     # =========================
-    # DELETE JOB
+    # CANCEL
     # =========================
     def cancel_reminder(self, job_id: str | None) -> None:
         if not job_id:
@@ -66,15 +82,16 @@ class ReminderService:
             job.remove()
 
     # =========================
-    # RESTORE AFTER RESTART
+    # RESTORE ON START
     # =========================
     def restore_jobs_from_db(self) -> None:
         bookings = self.repo.get_active_bookings_for_restore()
 
         for booking in bookings:
-            existing_job_id = booking["reminder_job_id"]
+            job_id = booking.get("reminder_job_id")
 
-            if existing_job_id and self.scheduler.get_job(existing_job_id):
+            # если уже есть живой job — пропускаем
+            if job_id and self.scheduler.get_job(job_id):
                 continue
 
             new_job_id = self.schedule_booking_reminder(
@@ -84,7 +101,6 @@ class ReminderService:
                 time_str=booking["time"],
             )
 
-            self.repo.set_reminder_job_id(
-                booking["id"],
-                new_job_id,
-            )
+            # если job не создался — не пишем мусор в БД
+            if new_job_id:
+                self.repo.set_reminder_job_id(booking["id"], new_job_id)
