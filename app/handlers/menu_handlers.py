@@ -7,32 +7,11 @@ from app.keyboards.common import back_to_menu_kb, portfolio_kb
 router = Router()
 
 
-# 🔹 безопасный answer (чтобы не было "loading...")
 async def safe_answer(callback: CallbackQuery):
     try:
         await callback.answer()
     except:
         pass
-
-
-# 📖 Моя запись
-@router.callback_query(F.data == "my_booking")
-async def my_booking(callback: CallbackQuery):
-    await safe_answer(callback)
-    await callback.message.edit_text(
-        "📖 Твоя запись\n\n(пока пусто)",
-        reply_markup=back_to_menu_kb()
-    )
-
-
-# ❌ Отмена записи
-@router.callback_query(F.data == "cancel_my_booking")
-async def cancel_booking(callback: CallbackQuery):
-    await safe_answer(callback)
-    await callback.message.edit_text(
-        "❌ Отмена записи\n\nВыбери запись для отмены (скоро добавим)",
-        reply_markup=back_to_menu_kb()
-    )
 
 
 # 💰 Прайсы
@@ -63,3 +42,10 @@ async def portfolio(callback: CallbackQuery):
 async def back_menu(callback: CallbackQuery):
     await safe_answer(callback)
     await show_main_menu(callback)
+
+
+# 🧠 DEBUG (оставь, полезно)
+@router.callback_query()
+async def debug_all(callback: CallbackQuery):
+    print("CLICK:", callback.data)
+    await callback.answer()
