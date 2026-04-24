@@ -4,6 +4,7 @@ from aiogram import Bot, F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter
 from aiogram.types import CallbackQuery, Message
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.config import Settings
 from app.database.db import Database
@@ -39,7 +40,7 @@ def get_range():
 
 
 # =========================
-# старт букинга
+# старт booking
 # =========================
 @router.callback_query(StateFilter(None), F.data.in_(["start_booking", "book"]))
 async def start_booking(callback: CallbackQuery, bot: Bot, settings: Settings, db: Database):
@@ -47,6 +48,7 @@ async def start_booking(callback: CallbackQuery, bot: Bot, settings: Settings, d
 
     if db.has_active_booking(callback.from_user.id):
         b = db.get_active_booking(callback.from_user.id)
+
         await callback.message.edit_text(
             f"📌 У тебя уже есть запись:\n\n"
             f"{b['date']} {b['time']}",
@@ -66,18 +68,17 @@ async def start_booking(callback: CallbackQuery, bot: Bot, settings: Settings, d
         )
         return
 
-    kb = [
-        [__import__("aiogram.types").types.InlineKeyboardButton(text=v, callback_data=f"service:{k}")]
-        for k, v in SERVICES.items()
-    ]
-
-    kb.append([
-        __import__("aiogram.types").types.InlineKeyboardButton(text="🏠 Меню", callback_data="back_menu")
-    ])
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=v, callback_data=f"service:{k}")]
+            for k, v in SERVICES.items()
+        ]
+        + [[InlineKeyboardButton(text="🏠 Меню", callback_data="back_menu")]]
+    )
 
     await callback.message.edit_text(
         "💎 Выбери услугу:",
-        reply_markup=__import__("aiogram.types").types.InlineKeyboardMarkup(inline_keyboard=kb),
+        reply_markup=kb,
     )
 
 
@@ -92,10 +93,12 @@ async def choose_service(callback: CallbackQuery, state: FSMContext, db: Databas
     await state.update_data(service=service)
 
     today = date.today()
-    days = set(db.get_month_work_days(
-        today.isoformat(),
-        (today + timedelta(days=90)).isoformat()
-    ))
+    days = set(
+        db.get_month_work_days(
+            today.isoformat(),
+            (today + timedelta(days=90)).isoformat(),
+        )
+    )
 
     await callback.message.edit_text(
         "📅 Выбери дату:",
@@ -104,7 +107,7 @@ async def choose_service(callback: CallbackQuery, state: FSMContext, db: Databas
 
 
 # =========================
-# переключение месяца
+# смена месяца
 # =========================
 @router.callback_query(F.data.startswith("cal_month:"))
 async def change_month(callback: CallbackQuery, db: Database):
@@ -113,10 +116,12 @@ async def change_month(callback: CallbackQuery, db: Database):
     offset = int(callback.data.split(":")[1])
 
     today = date.today()
-    days = set(db.get_month_work_days(
-        today.isoformat(),
-        (today + timedelta(days=90)).isoformat()
-    ))
+    days = set(
+        db.get_month_work_days(
+            today.isoformat(),
+            (today + timedelta(days=90)).isoformat(),
+        )
+    )
 
     await callback.message.edit_text(
         "📅 Выбери дату:",
@@ -125,17 +130,19 @@ async def change_month(callback: CallbackQuery, db: Database):
 
 
 # =========================
-# back из слотов → календарь
+# назад календарь
 # =========================
 @router.callback_query(F.data == "back_calendar")
 async def back_calendar(callback: CallbackQuery, db: Database):
     await callback.answer()
 
     today = date.today()
-    days = set(db.get_month_work_days(
-        today.isoformat(),
-        (today + timedelta(days=90)).isoformat()
-    ))
+    days = set(
+        db.get_month_work_days(
+            today.isoformat(),
+            (today + timedelta(days=90)).isoformat(),
+        )
+    )
 
     await callback.message.edit_text(
         "📅 Выбери дату:",
@@ -173,11 +180,12 @@ async def pick_date(callback: CallbackQuery, db: Database, state: FSMContext):
 async def pick_time(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
-    try:
-        _, date_str, time_str = callback.data.split(":", 2)
-    except:
+    parts = callback.data.split(":", 2)
+    if len(parts) != 3:
         await callback.answer("Ошибка данных", show_alert=True)
         return
+
+    _, date_str, time_str = parts
 
     await state.update_data(date=date_str, time=time_str)
     await state.set_state(BookingStates.waiting_for_name)
