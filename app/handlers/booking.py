@@ -14,7 +14,7 @@ from app.keyboards.calendar import (
     format_ru_date,
 )
 from app.keyboards.common import back_to_menu_kb, subscription_kb
-from app.services.subscription import check_subscription
+from app.services.subscription import is_subscribed
 from app.services.scheduler import ReminderService
 from app.states.booking import BookingStates
 
