@@ -3,7 +3,7 @@ from datetime import date, timedelta
 from aiogram import Bot, F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.config import Settings
 from app.database.db import Database
@@ -37,9 +37,9 @@ async def safe_edit(callback: CallbackQuery, text: str, kb=None):
 
 
 # =========================
-# START
+# START BOOKING
 # =========================
-@router.callback_query(StateFilter(None), F.data == "start_booking")
+@router.callback_query(StateFilter(None), F.data.in_(["start_booking", "book"]))
 async def start_booking(callback: CallbackQuery, bot: Bot, settings: Settings, db: Database):
     await callback.answer()
 
@@ -61,12 +61,10 @@ async def start_booking(callback: CallbackQuery, bot: Bot, settings: Settings, d
         b = db.get_active_booking(callback.from_user.id)
         await safe_edit(
             callback,
-            f"📌 У тебя уже есть запись:\n\n{b['date']} {b['time']}",
+            f"📌 У тебя уже есть запись:\n\n📅 {b['date']} ⏰ {b['time']}",
             back_to_menu_kb(),
         )
         return
-
-    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -105,20 +103,19 @@ async def choose_service(callback: CallbackQuery, state: FSMContext, db: Databas
 
 
 # =========================
-# PICK DATE (FIX HERE 🔥)
+# PICK DATE
 # =========================
 @router.callback_query(F.data.startswith("pick_date:"))
 async def pick_date(callback: CallbackQuery, db: Database, state: FSMContext):
     await callback.answer()
 
-    # FIX: safe parsing
-    date_str = callback.data.replace("pick_date:", "")
+    date_str = callback.data.split(":", 1)[1]
 
     await state.update_data(date=date_str)
 
-    slots = db.get_free_slots(date_str)
+    # 🔥 FIX: правильный метод
+    slots = db.get_available_slots(date_str)
 
-    # 🔥 DEBUG FIX (главное)
     if not slots:
         await callback.answer("Нет свободных слотов", show_alert=True)
         return
@@ -137,10 +134,14 @@ async def pick_date(callback: CallbackQuery, db: Database, state: FSMContext):
 async def pick_time(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
-    _, date_str, time_str = callback.data.split(":", 2)
+    parts = callback.data.split(":")
+    if len(parts) < 3:
+        await callback.answer("Ошибка данных", show_alert=True)
+        return
+
+    _, date_str, time_str = parts
 
     await state.update_data(date=date_str, time=time_str)
-
     await state.set_state(BookingStates.waiting_for_name)
 
     await callback.message.edit_text("✍️ Введи имя:")
@@ -167,7 +168,7 @@ async def get_phone(message: Message, state: FSMContext):
     await state.update_data(phone=message.text)
 
     await message.answer(
-        "📌 Проверь:\n\n"
+        "📌 Проверь запись:\n\n"
         f"📅 {data['date']}\n"
         f"⏰ {data['time']}\n"
         f"👤 {data['name']}\n"
@@ -177,7 +178,7 @@ async def get_phone(message: Message, state: FSMContext):
 
 
 # =========================
-# CONFIRM
+# CONFIRM BOOKING
 # =========================
 @router.callback_query(F.data == "confirm_booking")
 async def confirm(callback: CallbackQuery, state: FSMContext, db: Database):
